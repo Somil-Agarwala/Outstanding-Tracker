@@ -1,14 +1,24 @@
 import { useState } from 'react'
 import { useMasterData } from '../../hooks/useMasterData'
 import { useAuth } from '../../hooks/useAuth'
-import { Plus, X, Loader2, ShieldOff } from 'lucide-react'
+import { Plus, X, Loader2, Pencil } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
+import { supabase } from '../../lib/supabase'
 
-/* ── Add Stockist modal ── */
-function AddStockistModal({ companies, allPsrs, locations, onSave, onClose }) {
-  const [f, setF] = useState({ name:'', town:'', mobile:'', company_id:'', psr_id:'', location_id:'', credit_days:'30' })
-  const [busy, setBusy]   = useState(false)
-  const [err,  setErr]    = useState('')
+/* ── Stockist Modal (Add & Edit) ── */
+function StockistModal({ stockist, companies, allPsrs, locations, onSave, onClose }) {
+  const editing = !!stockist
+  const [f, setF] = useState({
+    name:        stockist?.name              ?? '',
+    town:        stockist?.town              ?? '',
+    mobile:      stockist?.mobile            ?? '',
+    company_id:  stockist?.company_id        ?? '',
+    psr_id:      stockist?.psr_id            ?? '',
+    location_id: stockist?.location_id       ?? '',
+    credit_days: String(stockist?.credit_days ?? 30),
+  })
+  const [busy, setBusy] = useState(false)
+  const [err,  setErr]  = useState('')
   const s = k => v => setF(p => ({ ...p, [k]: v }))
 
   async function submit(e) {
@@ -18,9 +28,11 @@ function AddStockistModal({ companies, allPsrs, locations, onSave, onClose }) {
     }
     setBusy(true)
     try {
-      await onSave({ name: f.name.trim(), town: f.town.trim(), mobile: f.mobile || null,
+      await onSave({
+        name: f.name.trim(), town: f.town.trim(), mobile: f.mobile || null,
         company_id: f.company_id, psr_id: f.psr_id, location_id: f.location_id,
-        credit_days: Number(f.credit_days) || 30 })
+        credit_days: Number(f.credit_days) || 30,
+      }, stockist?.id ?? null)
       onClose()
     } catch (e) { setErr(e.message) } finally { setBusy(false) }
   }
@@ -29,7 +41,7 @@ function AddStockistModal({ companies, allPsrs, locations, onSave, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl">
         <div className="flex justify-between items-center mb-5">
-          <h3 className="text-base font-semibold">Add Stockist</h3>
+          <h3 className="text-base font-semibold">{editing ? 'Edit Stockist' : 'Add Stockist'}</h3>
           <button onClick={onClose}><X size={16} className="text-gray-400" /></button>
         </div>
         <form onSubmit={submit} className="space-y-3">
@@ -57,12 +69,13 @@ function AddStockistModal({ companies, allPsrs, locations, onSave, onClose }) {
               {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select></div>
           <div><label className="label">Credit Days *</label>
-            <input type="number" min="1" className="input" value={f.credit_days} onChange={e => s('credit_days')(e.target.value)} /></div>
+            <input type="number" min="1" className="input" value={f.credit_days}
+              onChange={e => s('credit_days')(e.target.value)} /></div>
           {err && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{err}</p>}
           <div className="flex gap-2 pt-1">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
             <button type="submit" disabled={busy} className="btn-primary flex-1 justify-center">
-              {busy && <Loader2 size={13} className="animate-spin" />} Save Stockist
+              {busy && <Loader2 size={13} className="animate-spin" />} {editing ? 'Update' : 'Save'}
             </button>
           </div>
         </form>
@@ -71,9 +84,15 @@ function AddStockistModal({ companies, allPsrs, locations, onSave, onClose }) {
   )
 }
 
-/* ── Add PSR modal ── */
-function AddPsrModal({ companies, locations, onSave, onClose }) {
-  const [f, setF] = useState({ name:'', mobile:'', company_id:'', location_id:'' })
+/* ── PSR Modal (Add & Edit) ── */
+function PsrModal({ psr, companies, locations, onSave, onClose }) {
+  const editing = !!psr
+  const [f, setF] = useState({
+    name:        psr?.name        ?? '',
+    mobile:      psr?.mobile      ?? '',
+    company_id:  psr?.company_id  ?? '',
+    location_id: psr?.location_id ?? '',
+  })
   const [busy, setBusy] = useState(false)
   const [err,  setErr]  = useState('')
   const s = k => v => setF(p => ({ ...p, [k]: v }))
@@ -85,8 +104,10 @@ function AddPsrModal({ companies, locations, onSave, onClose }) {
     }
     setBusy(true)
     try {
-      await onSave({ name: f.name.trim(), mobile: f.mobile || null,
-        company_id: f.company_id, location_id: f.location_id })
+      await onSave({
+        name: f.name.trim(), mobile: f.mobile || null,
+        company_id: f.company_id, location_id: f.location_id,
+      }, psr?.id ?? null)
       onClose()
     } catch (e) { setErr(e.message) } finally { setBusy(false) }
   }
@@ -95,7 +116,7 @@ function AddPsrModal({ companies, locations, onSave, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl">
         <div className="flex justify-between items-center mb-5">
-          <h3 className="text-base font-semibold">Add PSR / Agent</h3>
+          <h3 className="text-base font-semibold">{editing ? 'Edit PSR' : 'Add PSR / Agent'}</h3>
           <button onClick={onClose}><X size={16} className="text-gray-400" /></button>
         </div>
         <form onSubmit={submit} className="space-y-3">
@@ -117,7 +138,7 @@ function AddPsrModal({ companies, locations, onSave, onClose }) {
           <div className="flex gap-2 pt-1">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
             <button type="submit" disabled={busy} className="btn-primary flex-1 justify-center">
-              {busy && <Loader2 size={13} className="animate-spin" />} Save PSR
+              {busy && <Loader2 size={13} className="animate-spin" />} {editing ? 'Update' : 'Save'}
             </button>
           </div>
         </form>
@@ -129,9 +150,9 @@ function AddPsrModal({ companies, locations, onSave, onClose }) {
 /* ── Main Page ── */
 export default function MasterPage() {
   const { isAdmin } = useAuth()
-  const { companies, locations, allPsrs, allStockists, loading, addStockist, addPsr } = useMasterData()
-  const [showStockist, setShowStockist] = useState(false)
-  const [showPsr,      setShowPsr]      = useState(false)
+  const { companies, locations, allPsrs, allStockists, loading, addStockist, addPsr, refetch } = useMasterData()
+  const [stockistModal, setStockistModal] = useState(null)
+  const [psrModal,      setPsrModal]      = useState(null)
 
   if (!isAdmin) return <Navigate to="/" replace />
 
@@ -140,6 +161,26 @@ export default function MasterPage() {
       <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
     </div>
   )
+
+  async function saveStockist(payload, id) {
+    if (id) {
+      const { error } = await supabase.from('stockists').update(payload).eq('id', id)
+      if (error) throw error
+      await refetch()
+    } else {
+      await addStockist(payload)
+    }
+  }
+
+  async function savePsr(payload, id) {
+    if (id) {
+      const { error } = await supabase.from('psrs').update(payload).eq('id', id)
+      if (error) throw error
+      await refetch()
+    } else {
+      await addPsr(payload)
+    }
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -156,14 +197,16 @@ export default function MasterPage() {
             <h2 className="text-sm font-semibold text-gray-700">
               Stockists <span className="text-gray-400 font-normal ml-1">({allStockists.length})</span>
             </h2>
-            <button onClick={() => setShowStockist(true)} className="btn-primary text-xs">
+            <button onClick={() => setStockistModal({})} className="btn-primary text-xs">
               <Plus size={12} /> Add
             </button>
           </div>
           <div className="overflow-auto max-h-80">
             <table className="w-full">
               <thead>
-                <tr>{['Name','Town','Company','PSR','Mobile','Credit'].map(h => <th key={h} className="th">{h}</th>)}</tr>
+                <tr>{['Name','Town','Company','PSR','Mobile','Credit',''].map(h =>
+                  <th key={h} className="th">{h}</th>)}
+                </tr>
               </thead>
               <tbody>
                 {allStockists.map(s => (
@@ -174,10 +217,16 @@ export default function MasterPage() {
                     <td className="td text-gray-500 text-xs">{s.psrs?.name}</td>
                     <td className="td font-mono text-xs text-gray-400">{s.mobile ?? '—'}</td>
                     <td className="td text-gray-500 text-xs">{s.credit_days}d</td>
+                    <td className="td">
+                      <button onClick={() => setStockistModal(s)}
+                        className="text-indigo-600 hover:text-indigo-800 transition-colors">
+                        <Pencil size={13} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {allStockists.length === 0 && (
-                  <tr><td colSpan={6} className="td text-center text-gray-400 py-8">No stockists yet</td></tr>
+                  <tr><td colSpan={7} className="td text-center text-gray-400 py-8">No stockists yet</td></tr>
                 )}
               </tbody>
             </table>
@@ -190,14 +239,16 @@ export default function MasterPage() {
             <h2 className="text-sm font-semibold text-gray-700">
               PSRs / Agents <span className="text-gray-400 font-normal ml-1">({allPsrs.length})</span>
             </h2>
-            <button onClick={() => setShowPsr(true)} className="btn-primary text-xs">
+            <button onClick={() => setPsrModal({})} className="btn-primary text-xs">
               <Plus size={12} /> Add
             </button>
           </div>
           <div className="overflow-auto max-h-80">
             <table className="w-full">
               <thead>
-                <tr>{['Name','Location','Company','Mobile'].map(h => <th key={h} className="th">{h}</th>)}</tr>
+                <tr>{['Name','Location','Company','Mobile',''].map(h =>
+                  <th key={h} className="th">{h}</th>)}
+                </tr>
               </thead>
               <tbody>
                 {allPsrs.map(p => (
@@ -206,10 +257,16 @@ export default function MasterPage() {
                     <td className="td text-gray-500 text-xs">{p.locations?.name}</td>
                     <td className="td text-gray-500 text-xs">{p.companies?.name}</td>
                     <td className="td font-mono text-xs text-gray-400">{p.mobile ?? '—'}</td>
+                    <td className="td">
+                      <button onClick={() => setPsrModal(p)}
+                        className="text-indigo-600 hover:text-indigo-800 transition-colors">
+                        <Pencil size={13} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {allPsrs.length === 0 && (
-                  <tr><td colSpan={4} className="td text-center text-gray-400 py-8">No PSRs yet</td></tr>
+                  <tr><td colSpan={5} className="td text-center text-gray-400 py-8">No PSRs yet</td></tr>
                 )}
               </tbody>
             </table>
@@ -222,9 +279,7 @@ export default function MasterPage() {
             Companies <span className="text-gray-400 font-normal">({companies.length})</span>
           </h2>
           <div className="flex flex-wrap gap-2">
-            {companies.map(c => (
-              <span key={c.id} className="badge badge-indigo">{c.name}</span>
-            ))}
+            {companies.map(c => <span key={c.id} className="badge badge-indigo">{c.name}</span>)}
           </div>
         </div>
 
@@ -234,23 +289,23 @@ export default function MasterPage() {
             Locations <span className="text-gray-400 font-normal">({locations.length})</span>
           </h2>
           <div className="flex flex-wrap gap-2">
-            {locations.map(l => (
-              <span key={l.id} className="badge badge-gray">{l.name}</span>
-            ))}
+            {locations.map(l => <span key={l.id} className="badge badge-gray">{l.name}</span>)}
           </div>
         </div>
       </div>
 
-      {showStockist && (
-        <AddStockistModal
+      {stockistModal !== null && (
+        <StockistModal
+          stockist={stockistModal?.id ? stockistModal : null}
           companies={companies} allPsrs={allPsrs} locations={locations}
-          onSave={addStockist} onClose={() => setShowStockist(false)}
+          onSave={saveStockist} onClose={() => setStockistModal(null)}
         />
       )}
-      {showPsr && (
-        <AddPsrModal
+      {psrModal !== null && (
+        <PsrModal
+          psr={psrModal?.id ? psrModal : null}
           companies={companies} locations={locations}
-          onSave={addPsr} onClose={() => setShowPsr(false)}
+          onSave={savePsr} onClose={() => setPsrModal(null)}
         />
       )}
     </div>
