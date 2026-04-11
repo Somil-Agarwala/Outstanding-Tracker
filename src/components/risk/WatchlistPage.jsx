@@ -336,7 +336,7 @@ export default function WatchlistPage() {
                   'Risk Score','Level',
                   'Total Invoices','Times Overdue','Avg Delay',
                   'Overdue Amount','Open Balance','Last Payment',
-                  'Watchlist',''].map(h => (
+                  'Watchlist','Remarks',''].map(h => (
                   <th key={h} className="th">{h}</th>
                 ))}
               </tr>
@@ -344,7 +344,7 @@ export default function WatchlistPage() {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="td text-center text-gray-400 py-16">
+                  <td colSpan={16} className="td text-center text-gray-400 py-16">
                     No dealers found
                   </td>
                 </tr>
@@ -395,6 +395,9 @@ export default function WatchlistPage() {
                       {d.watchlist
                         ? <span className="badge badge-red">⚠ Watchlisted</span>
                         : <span className="badge badge-gray">—</span>}
+                    </td>
+                    <td className="td max-w-[150px]">
+                      <p className="text-xs text-gray-400 truncate">{d.watchlist_reason || '—'}</p>
                     </td>
                     <td className="td">
                       <ChevronRight size={14} className="text-gray-300" />
