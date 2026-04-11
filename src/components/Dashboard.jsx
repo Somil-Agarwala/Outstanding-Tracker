@@ -37,6 +37,7 @@ export default function Dashboard() {
   const stats = useMemo(() => {
     const totalBalance    = invoices.reduce((s, i) => s + Number(i.balance || 0), 0)
     const totalCollected  = invoices.reduce((s, i) => s + Number(i.payment_received || 0), 0)
+    const totalPDC        = invoices.reduce((s, i) => s + Number(i.pdc_amount || 0), 0)
     const overdueInvs     = invoices.filter(i => callStatus(i) === 'overdue')
     const overdueAmt      = overdueInvs.reduce((s, i) => s + Number(i.balance || 0), 0)
     const dueTodayCount   = invoices.filter(i => callStatus(i) === 'due_today').length
@@ -56,7 +57,7 @@ export default function Dashboard() {
       .slice(0, 8)
       .map(d => ({ ...d, name: d.name.length > 12 ? d.name.slice(0, 12) + '…' : d.name }))
 
-    return { totalBalance, totalCollected, overdueInvs, overdueAmt, dueTodayCount, callDueCount, watchlistCount, chartData }
+    return { totalBalance, totalCollected, totalPDC, overdueInvs, overdueAmt, dueTodayCount, callDueCount, watchlistCount, chartData }
   }, [invoices, dealers])
 
   if (loading) {
@@ -79,12 +80,13 @@ export default function Dashboard() {
       </div>
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-7 gap-4">
         <KPI label="Total balance"   value={fmtCurrency(stats.totalBalance)}  Icon={IndianRupee} />
         <KPI label="Overdue"         value={fmtCurrency(stats.overdueAmt)}    sub={`${stats.overdueInvs.length} invoices`} Icon={AlertTriangle} danger />
         <KPI label="Due today"       value={stats.dueTodayCount}              sub="invoices"     Icon={Clock}         warning />
         <KPI label="Call alerts"     value={stats.callDueCount}               sub="due tomorrow" Icon={Phone}         warning />
         <KPI label="Collected"       value={fmtCurrency(stats.totalCollected)} Icon={CheckCircle2} success />
+        <KPI label="Total PDC"       value={fmtCurrency(stats.totalPDC)}      sub="post dated cheques" Icon={IndianRupee} />
         <KPI label="Watchlist"       value={stats.watchlistCount}             sub="dealers"      Icon={AlertTriangle} danger />
       </div>
 
