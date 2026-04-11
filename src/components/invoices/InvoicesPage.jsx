@@ -136,7 +136,7 @@ export default function InvoicesPage() {
             <thead>
               <tr>
                 {[
-                  'Invoice No','Date','Company','Stockist','Town','PSR','Mobile',
+                  'Invoice No','Date','Recd. Date','Company','Stockist','Town','PSR','Mobile',
                   'Inv Amt','CN/DN','Net Outstanding',
                   'PDC Cheque','PDC Date','PDC Amt',
                   'Credit','Due Date','Delay',
@@ -166,6 +166,7 @@ export default function InvoicesPage() {
                   >
                     <td className="td font-mono text-xs font-semibold text-indigo-700">{inv.invoice_number}</td>
                     <td className="td text-gray-500 text-xs">{fmtDateShort(inv.invoice_date)}</td>
+                    <td className="td text-gray-500 text-xs">{fmtDateShort(inv.payment_date)}</td>
                     <td className="td text-gray-600 text-xs">{inv.company_name}</td>
                     <td className="td">
                       <div className="flex items-center gap-1.5">
