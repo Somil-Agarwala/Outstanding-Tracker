@@ -35,7 +35,22 @@ export default function ReportsPage() {
       byPsr[k].count++
       if (callStatus(inv) === 'overdue') byPsr[k].overdue += Number(inv.balance ?? 0)
     })
-
+// by location + company
+    const byLocationCompany = {}
+    invoices.forEach(inv => {
+      const loc = inv.location_name ?? 'Unknown'
+      const com = inv.company_name  ?? 'Unknown'
+      if (!byLocationCompany[loc]) byLocationCompany[loc] = {}
+      if (!byLocationCompany[loc][com]) byLocationCompany[loc][com] = {
+        company: com, outstanding: 0, overdue: 0, collected: 0, count: 0
+      }
+      byLocationCompany[loc][com].outstanding += Number(inv.balance ?? 0)
+      byLocationCompany[loc][com].collected   += Number(inv.payment_received ?? 0)
+      byLocationCompany[loc][com].count++
+      if (callStatus(inv) === 'overdue')
+        byLocationCompany[loc][com].overdue += Number(inv.balance ?? 0)
+    })
+    const locations = Object.keys(byLocationCompany).sort()
     // risk distribution pie
     const riskPie = [
       { name: 'Critical', value: dealers.filter(d => d.risk_level === 'critical').length, fill: '#ef4444' },
@@ -47,7 +62,7 @@ export default function ReportsPage() {
     const companyArr = Object.values(byCompany).sort((a, b) => b.outstanding - a.outstanding)
     const psrArr     = Object.values(byPsr).sort((a, b) => b.outstanding - a.outstanding)
 
-    return { companyArr, psrArr, riskPie }
+   return { companyArr, psrArr, riskPie, byLocationCompany, locations }
   }, [invoices, dealers])
 
   /* ── exports ── */
@@ -241,6 +256,73 @@ export default function ReportsPage() {
           </table>
         </div>
       </div>
+  {/* ── Company × Location table ── */}
+      <div className="card overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
+          <h2 className="text-sm font-semibold text-gray-600">Company Performance by Location</h2>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-400">Location</span>
+            <select
+              className="input w-40 text-xs"
+              value={locationFilter}
+              onChange={e => setLocationFilter(e.target.value)}
+            >
+              <option value="All">All Locations</option>
+              {analytics.locations.map(l => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr>
+                {['Location','Company','Invoices','Outstanding','Overdue','Collected','Overdue %'].map(h => (
+                  <th key={h} className="th">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {analytics.locations
+                .filter(loc => locationFilter === 'All' || loc === locationFilter)
+                .flatMap(loc =>
+                  Object.values(analytics.byLocationCompany[loc])
+                    .sort((a, b) => b.outstanding - a.outstanding)
+                    .map((row, i) => {
+                      const pct = row.outstanding > 0
+                        ? Math.round((row.overdue / row.outstanding) * 100) : 0
+                      return (
+                        <tr key={`${loc}-${row.company}`} className="hover:bg-gray-50">
+                          <td className="td text-xs font-medium text-indigo-600">
+                            {i === 0 ? loc : ''}
+                          </td>
+                          <td className="td font-medium text-sm">{row.company}</td>
+                          <td className="td text-center text-gray-600">{row.count}</td>
+                          <td className="td text-right font-semibold">{fmtCurrency(row.outstanding)}</td>
+                          <td className={`td text-right font-medium ${row.overdue > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                            {fmtCurrency(row.overdue)}
+                          </td>
+                          <td className="td text-right text-emerald-600 font-medium">
+                            {fmtCurrency(row.collected)}
+                          </td>
+                          <td className="td text-center">
+                            <span className={`badge ${pct > 30 ? 'badge-red' : pct > 10 ? 'badge-amber' : 'badge-gray'}`}>
+                              {pct}%
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })
+                )}
+              {analytics.locations.length === 0 && (
+                <tr><td colSpan={7} className="td text-center text-gray-400 py-10">No data</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </div>
   )
 }
