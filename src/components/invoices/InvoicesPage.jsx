@@ -164,13 +164,13 @@ export default function InvoicesPage() {
                     key={inv.id}
                     className={`hover:bg-gray-50 transition-colors ${isUrgent ? 'bg-pink-50/30' : ''}`}
                   >
-                    <td className="td font-mono text-xs font-semibold text-indigo-700">{inv.invoice_number}</td>
+                    <td className="td font-mono text-[10px] font-semibold text-indigo-700">{inv.invoice_number}</td>
                     <td className="td text-gray-500 text-xs">{fmtDateShort(inv.invoice_date)}</td>
                     <td className="td text-gray-500 text-xs">{fmtDateShort(inv.payment_date)}</td>
                     <td className="td text-gray-600 text-xs">{inv.company_name}</td>
                     <td className="td">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-medium text-sm">{inv.stockist_name}</span>
+                        <span className="font-medium text-xs">{inv.stockist_name}</span>
                         {inv.watchlist && <AlertTriangle size={12} className="text-red-500 shrink-0" />}
                       </div>
                     </td>
