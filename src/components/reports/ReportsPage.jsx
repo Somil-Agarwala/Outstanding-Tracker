@@ -13,7 +13,22 @@ export default function ReportsPage() {
   const { invoices } = useInvoices()
   const { dealers }  = useWatchlist()
   const [locationFilter, setLocationFilter] = useState('All')
+const [expCompany,  setExpCompany]  = useState('')
+  const [expLocation, setExpLocation] = useState('')
+  const [expPsr,      setExpPsr]      = useState('')
 
+  // unique values for filter dropdowns
+  const allCompanies = [...new Set(invoices.map(i => i.company_name).filter(Boolean))].sort()
+  const allLocations = [...new Set(invoices.map(i => i.location_name).filter(Boolean))].sort()
+  const allPsrs      = [...new Set(invoices.map(i => i.psr_name).filter(Boolean))].sort()
+
+  // filtered invoices for export
+  const exportInvoices = invoices.filter(inv => {
+    if (expCompany  && inv.company_name  !== expCompany)  return false
+    if (expLocation && inv.location_name !== expLocation) return false
+    if (expPsr      && inv.psr_name      !== expPsr)      return false
+    return true
+  })
   const analytics = useMemo(() => {
     // by company
     const byCompany = {}
@@ -73,7 +88,7 @@ export default function ReportsPage() {
       'Credit Days','Due Date','Delay Days','Paid Amount','Paid Date','Balance',
       'Status','Risk Level','Watchlist','Remarks 1','Remarks 2',
     ]
-    const rows = invoices.map(inv => {
+    const rows = exportInvoices.map(inv => {
       const delay = inv.delay_days ?? 0
       return [
         inv.invoice_number, inv.invoice_date, inv.company_name, inv.stockist_name,
@@ -116,7 +131,7 @@ export default function ReportsPage() {
     // Sheet 1 — All invoices
     const inv_hdr = ['Invoice No','Date','Company','Stockist','Town','PSR',
       'Net Outstanding','Credit Days','Due Date','Delay Days','Paid','Balance','Status']
-    const inv_rows = invoices.map(inv => [
+    const inv_rows = exportInvoices.map(inv => [
       inv.invoice_number, inv.invoice_date, inv.company_name, inv.stockist_name,
       inv.town, inv.psr_name, inv.net_outstanding, inv.credit_days, inv.due_date,
       inv.delay_days ?? 0, inv.payment_received, inv.balance, callStatus(inv),
@@ -153,7 +168,23 @@ export default function ReportsPage() {
           <h1 className="text-xl font-semibold text-gray-900">Reports</h1>
           <p className="text-sm text-gray-400 mt-0.5">Analytics overview and Excel exports</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+       <div className="flex flex-wrap gap-2 items-center">
+          <select className="input w-36 text-xs" value={expCompany} onChange={e => setExpCompany(e.target.value)}>
+            <option value="">All Companies</option>
+            {allCompanies.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select className="input w-36 text-xs" value={expLocation} onChange={e => setExpLocation(e.target.value)}>
+            <option value="">All Locations</option>
+            {allLocations.map(l => <option key={l} value={l}>{l}</option>)}
+          </select>
+          <select className="input w-36 text-xs" value={expPsr} onChange={e => setExpPsr(e.target.value)}>
+            <option value="">All PSRs</option>
+            {allPsrs.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+          {(expCompany || expLocation || expPsr) && (
+            <button onClick={() => { setExpCompany(''); setExpLocation(''); setExpPsr('') }}
+              className="text-xs text-indigo-600 hover:underline">Clear</button>
+          )}
           <button onClick={exportOutstanding} className="btn-secondary text-xs">
             <Download size={13} /> Outstanding
           </button>
