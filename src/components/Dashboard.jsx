@@ -184,6 +184,54 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-    </div>
-  )
-}
+  {/* location-wise stats */}
+      {(() => {
+        const byLoc = {}
+        invoices.forEach(inv => {
+          const l = inv.location_name ?? 'Unknown'
+          if (!byLoc[l]) byLoc[l] = { outstanding: 0, overdue: 0, collected: 0, count: 0, callDue: 0 }
+          byLoc[l].outstanding += Number(inv.balance ?? 0)
+          byLoc[l].collected   += Number(inv.payment_received ?? 0)
+          byLoc[l].count++
+          if (callStatus(inv) === 'overdue')   byLoc[l].overdue  += Number(inv.balance ?? 0)
+          if (callStatus(inv) === 'call_due' || callStatus(inv) === 'due_today') byLoc[l].callDue++
+        })
+        const rows = Object.entries(byLoc).sort((a,b) => b[1].outstanding - a[1].outstanding)
+        if (rows.length === 0) return null
+        return (
+          <div className="card overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100">
+              <h2 className="text-sm font-semibold text-gray-600">Location-wise Summary</h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    {['Location','Invoices','Outstanding','Overdue','Collected','Call Alerts'].map(h => (
+                      <th key={h} className="th">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(([loc, d]) => (
+                    <tr key={loc} className="hover:bg-gray-50">
+                      <td className="td font-semibold text-indigo-600">{loc}</td>
+                      <td className="td text-center text-gray-600">{d.count}</td>
+                      <td className="td text-right font-semibold">{fmtCurrency(d.outstanding)}</td>
+                      <td className={`td text-right font-medium ${d.overdue > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                        {fmtCurrency(d.overdue)}
+                      </td>
+                      <td className="td text-right text-emerald-600 font-medium">{fmtCurrency(d.collected)}</td>
+                      <td className="td text-center">
+                        {d.callDue > 0
+                          ? <span className="badge badge-orange">{d.callDue} calls</span>
+                          : <span className="text-gray-300 text-xs">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
+      })()}
