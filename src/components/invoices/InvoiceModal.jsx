@@ -234,7 +234,7 @@ export default function InvoiceModal({ invoice, onSave, onClose }) {
                   value={form.payment_received} onChange={e => set('payment_received', e.target.value)} placeholder="0.00" />
               </div>
               <div>
-                <label className="label">Payment Date</label>
+                <label className="label">Received Date ★</label>
                 <input type="date" className="input" value={form.payment_date}
                   onChange={e => set('payment_date', e.target.value)} />
               </div>
