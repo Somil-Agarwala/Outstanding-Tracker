@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useInvoices }  from '../../hooks/useInvoices'
 import { useWatchlist } from '../../hooks/useWatchlist'
 import { fmtCurrency, callStatus, RISK } from '../../lib/utils'
@@ -12,6 +12,7 @@ import {
 export default function ReportsPage() {
   const { invoices } = useInvoices()
   const { dealers }  = useWatchlist()
+  const [locationFilter, setLocationFilter] = useState('All')
 
   const analytics = useMemo(() => {
     // by company
