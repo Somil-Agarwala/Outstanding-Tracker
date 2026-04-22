@@ -4,8 +4,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['"DM Sans"', 'sans-serif'],
-        mono: ['"DM Mono"', 'monospace'],
+        sans: ['Inter', '"DM Sans"', 'sans-serif'],
+        mono: ['"JetBrains Mono"', '"DM Mono"', 'monospace'],
       },
     },
   },
