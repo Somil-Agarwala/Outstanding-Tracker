@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useWatchlist } from '../../hooks/useWatchlist'
 import { fmtCurrency, fmtDate, fmtDateShort, RISK } from '../../lib/utils'
 import { X, AlertTriangle, FileText, Clock, IndianRupee, ChevronRight } from 'lucide-react'
-
+ 
 /* ── Risk score bar ── */
 function RiskBar({ score }) {
   const pct   = Math.min(100, Math.max(0, score ?? 0))
@@ -19,7 +19,7 @@ function RiskBar({ score }) {
     </div>
   )
 }
-
+ 
 /* ── Detail drawer ── */
 function DealerDrawer({ dealer, onClose, getDealerDetail, toggleWatchlist }) {
   const [tab,      setTab]      = useState('invoices')
@@ -27,7 +27,7 @@ function DealerDrawer({ dealer, onClose, getDealerDetail, toggleWatchlist }) {
   const [loading,  setLoading]  = useState(false)
   const [toggling, setToggling] = useState(false)
   const rc = RISK[dealer.risk_level] ?? RISK.low
-
+ 
   async function loadTab(t) {
     setTab(t)
     if (!detail) {
@@ -37,10 +37,10 @@ function DealerDrawer({ dealer, onClose, getDealerDetail, toggleWatchlist }) {
       setLoading(false)
     }
   }
-
+ 
   // load invoices on open
   useState(() => { loadTab('invoices') }, [])
-
+ 
   async function handleToggle() {
     setToggling(true)
     try {
@@ -49,18 +49,18 @@ function DealerDrawer({ dealer, onClose, getDealerDetail, toggleWatchlist }) {
       onClose()
     } catch (e) { alert(e.message) } finally { setToggling(false) }
   }
-
+ 
   const TABS = [
     { key: 'invoices', label: 'Invoices'        },
     { key: 'payments', label: 'Payment History' },
     { key: 'logs',     label: 'Watchlist Logs'  },
   ]
-
+ 
   return (
     <div className="fixed inset-0 z-50 flex">
       <div className="flex-1 bg-black/40" onClick={onClose} />
       <div className="w-[540px] bg-white flex flex-col shadow-2xl overflow-hidden">
-
+ 
         {/* header */}
         <div className="px-6 py-5 border-b border-slate-100 shrink-0">
           <div className="flex items-start justify-between mb-1">
@@ -81,7 +81,7 @@ function DealerDrawer({ dealer, onClose, getDealerDetail, toggleWatchlist }) {
               <X size={17} />
             </button>
           </div>
-
+ 
           {/* risk bar */}
           <div className="mt-4">
             <div className="flex justify-between text-[10px] text-slate-400 mb-1">
@@ -99,7 +99,7 @@ function DealerDrawer({ dealer, onClose, getDealerDetail, toggleWatchlist }) {
               />
             </div>
           </div>
-
+ 
           {/* stat chips */}
           <div className="grid grid-cols-4 gap-2 mt-4">
             {[
@@ -114,7 +114,7 @@ function DealerDrawer({ dealer, onClose, getDealerDetail, toggleWatchlist }) {
               </div>
             ))}
           </div>
-
+ 
           {/* toggle button */}
           <button
             onClick={handleToggle} disabled={toggling}
@@ -127,7 +127,7 @@ function DealerDrawer({ dealer, onClose, getDealerDetail, toggleWatchlist }) {
             {toggling ? '…' : dealer.watchlist ? 'Remove from watchlist' : 'Add to watchlist'}
           </button>
         </div>
-
+ 
         {/* tabs */}
         <div className="flex shrink-0 border-b border-slate-100">
           {TABS.map(t => (
@@ -144,7 +144,7 @@ function DealerDrawer({ dealer, onClose, getDealerDetail, toggleWatchlist }) {
             </button>
           ))}
         </div>
-
+ 
         {/* tab content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
           {loading && (
@@ -152,7 +152,7 @@ function DealerDrawer({ dealer, onClose, getDealerDetail, toggleWatchlist }) {
               <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
             </div>
           )}
-
+ 
           {/* invoices */}
           {!loading && tab === 'invoices' && detail && (
             detail.invoices.length === 0
@@ -192,7 +192,7 @@ function DealerDrawer({ dealer, onClose, getDealerDetail, toggleWatchlist }) {
                   )
                 })
           )}
-
+ 
           {/* payment history */}
           {!loading && tab === 'payments' && detail && (
             detail.payments.length === 0
@@ -213,7 +213,7 @@ function DealerDrawer({ dealer, onClose, getDealerDetail, toggleWatchlist }) {
                   </div>
                 ))
           )}
-
+ 
           {/* watchlist logs */}
           {!loading && tab === 'logs' && detail && (
             detail.logs.length === 0
@@ -238,7 +238,7 @@ function DealerDrawer({ dealer, onClose, getDealerDetail, toggleWatchlist }) {
     </div>
   )
 }
-
+ 
 /* ── Main Watchlist Page ── */
 export default function WatchlistPage() {
   const { dealers, loading, toggleWatchlist, getDealerDetail } = useWatchlist()
@@ -246,38 +246,38 @@ export default function WatchlistPage() {
   const [watchlistOnly,  setWatchlistOnly]  = useState(false)
   const [sortBy,         setSortBy]         = useState('risk_score')
   const [selectedDealer, setSelectedDealer] = useState(null)
-
+ 
   const riskCounts = useMemo(() => ({
     critical: dealers.filter(d => d.risk_level === 'critical').length,
     high:     dealers.filter(d => d.risk_level === 'high').length,
     medium:   dealers.filter(d => d.risk_level === 'medium').length,
     low:      dealers.filter(d => d.risk_level === 'low').length,
   }), [dealers])
-
+ 
   const filtered = useMemo(() =>
     dealers
       .filter(d => !riskFilter    || d.risk_level === riskFilter)
       .filter(d => !watchlistOnly || d.watchlist)
       .sort((a, b) => Number(b[sortBy] ?? 0) - Number(a[sortBy] ?? 0))
   , [dealers, riskFilter, watchlistOnly, sortBy])
-
+ 
   const RISK_CHIPS = [
     { level: 'critical', label: 'Critical', bg: 'bg-red-50',    border: 'border-red-200',    text: 'text-red-700'     },
     { level: 'high',     label: 'High',     bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700'  },
     { level: 'medium',   label: 'Medium',   bg: 'bg-amber-50',  border: 'border-amber-200',  text: 'text-amber-700'   },
     { level: 'low',      label: 'Low',      bg: 'bg-emerald-50',border: 'border-emerald-200',text: 'text-emerald-700' },
   ]
-
+ 
   return (
     <div className="flex flex-col h-full">
-
+ 
       {/* header */}
       <div className="shrink-0 px-5 py-3 bg-white border-b border-slate-100">
         <h1 className="text-sm font-bold text-slate-800">Risk & Watchlist</h1>
         <p className="text-[10px] text-slate-400 mt-0.5">
           Auto-scored from payment history · click any dealer to see full history
         </p>
-
+ 
         {/* risk chips */}
         <div className="grid grid-cols-4 gap-2 mt-3">
           {RISK_CHIPS.map(r => {
@@ -301,7 +301,7 @@ export default function WatchlistPage() {
           })}
         </div>
       </div>
-
+ 
       {/* filter bar */}
       <div className="shrink-0 px-5 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center gap-4">
         <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none">
@@ -322,7 +322,7 @@ export default function WatchlistPage() {
           </select>
         </div>
       </div>
-
+ 
       {/* table */}
       <div className="flex-1 overflow-auto">
         {loading ? (
@@ -360,7 +360,7 @@ export default function WatchlistPage() {
                   >
                     {/* STICKY: Dealer */}
                     <td className="td font-semibold text-slate-700"
-                      style={{ position: 'sticky', left: 0, zIndex: 10, background: 'inherit', minWidth: 140 }}>
+                      style={{ position: 'sticky', left: 0, zIndex: 10, background: d.watchlist ? '#fff5f5' : '#ffffff', minWidth: 140, boxShadow: 'inset -1px 0 0 #e2e8f0' }}>
                       <div className="flex items-center gap-1">
                         {d.watchlist && <AlertTriangle size={11} className="text-red-500 shrink-0" />}
                         <span className="text-[11px]">{d.name}</span>
@@ -368,15 +368,15 @@ export default function WatchlistPage() {
                     </td>
                     {/* STICKY: Town */}
                     <td className="td text-slate-400 text-[11px]"
-                      style={{ position: 'sticky', left: 144, zIndex: 10, background: 'inherit', minWidth: 100 }}>
+                      style={{ position: 'sticky', left: 144, zIndex: 10, background: d.watchlist ? '#fff5f5' : '#ffffff', minWidth: 100 }}>
                       {d.town}
                     </td>
                     {/* STICKY: Company */}
                     <td className="td text-slate-400 text-[11px]"
-                      style={{ position: 'sticky', left: 232, zIndex: 10, background: 'inherit', minWidth: 110 }}>
+                      style={{ position: 'sticky', left: 232, zIndex: 10, background: d.watchlist ? '#fff5f5' : '#ffffff', minWidth: 110, boxShadow: 'inset -2px 0 0 #e2e8f0' }}>
                       {d.company_name}
                     </td>
-
+ 
                     {/* scrollable */}
                     <td className="td text-slate-400 text-[11px]">{d.psr_name}</td>
                     <td className="td font-mono text-[10px] text-slate-300">{d.mobile ?? '—'}</td>
@@ -423,7 +423,7 @@ export default function WatchlistPage() {
           </table>
         )}
       </div>
-
+ 
       {selectedDealer && (
         <DealerDrawer
           dealer={selectedDealer}
