@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Loader2 } from 'lucide-react'
 import { useMasterData } from '../../hooks/useMasterData'
 import { fmtCurrency, calcDueDate, fmtDate, todayISO } from '../../lib/utils'
@@ -112,15 +113,10 @@ export default function InvoiceModal({ invoice, onSave, onClose }) {
     }
   }
 
-  return (
-    /*
-      KEY FIX: position:fixed + inset-0 centres on the VIEWPORT,
-      not the scrolled page. The inner div uses maxHeight:90vh with
-      overflow-y:auto so the form scrolls inside the modal box.
-    */
+  const modalContent = (
     <div
       style={{
-        position: 'fixed', inset: 0, zIndex: 50,
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: '1rem',
         background: 'rgba(15,23,42,0.6)',
@@ -163,7 +159,6 @@ export default function InvoiceModal({ invoice, onSave, onClose }) {
                 <input type="date" className="input" value={form.invoice_date}
                   onChange={e => set('invoice_date', e.target.value)} />
               </div>
-              {/* NEW FIELD */}
               <div>
                 <label className="label">Invoice Received Date</label>
                 <input type="date" className="input" value={form.invoice_received_date}
@@ -335,4 +330,6 @@ export default function InvoiceModal({ invoice, onSave, onClose }) {
       </div>
     </div>
   )
+
+  return createPortal(modalContent, document.body)
 }
