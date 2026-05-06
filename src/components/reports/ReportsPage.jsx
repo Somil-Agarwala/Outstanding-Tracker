@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useInvoices }  from '../../hooks/useInvoices'
 import { useWatchlist } from '../../hooks/useWatchlist'
-import { fmtCurrency, callStatus, RISK } from '../../lib/utils'
+import { fmtCurrency, callStatus } from '../../lib/utils'
 import { Download } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import {
@@ -13,18 +13,22 @@ export default function ReportsPage() {
   const { invoices } = useInvoices()
   const { dealers }  = useWatchlist()
 
-  // ── filter state ──
-  const [expCompany,      setExpCompany]      = useState('')
-  const [expLocation,     setExpLocation]     = useState('')
-  const [expPsr,          setExpPsr]          = useState('')
-  const [chartLocation,   setChartLocation]   = useState('')
+  const [expCompany,    setExpCompany]    = useState('')
+  const [expLocation,   setExpLocation]   = useState('')
+  const [expPsr,        setExpPsr]        = useState('')
+  const [chartLocation, setChartLocation] = useState('')
 
-  // unique values for dropdowns
-  const allCompanies = useMemo(() => [...new Set(invoices.map(i => i.company_name).filter(Boolean))].sort(), [invoices])
-  const allLocations = useMemo(() => [...new Set(invoices.map(i => i.location_name).filter(Boolean))].sort(), [invoices])
-  const allPsrs      = useMemo(() => [...new Set(invoices.map(i => i.psr_name).filter(Boolean))].sort(), [invoices])
+  const allCompanies = useMemo(() =>
+    [...new Set(invoices.map(i => i.company_name).filter(Boolean))].sort()
+  , [invoices])
+  const allLocations = useMemo(() =>
+    [...new Set(invoices.map(i => i.location_name).filter(Boolean))].sort()
+  , [invoices])
+  const allPsrs = useMemo(() =>
+    [...new Set(invoices.map(i => i.psr_name).filter(Boolean))].sort()
+  , [invoices])
 
-  // invoices filtered for export
+  // invoices for export (respects export filters)
   const exportInvoices = useMemo(() => invoices.filter(inv => {
     if (expCompany  && inv.company_name  !== expCompany)  return false
     if (expLocation && inv.location_name !== expLocation) return false
@@ -32,51 +36,56 @@ export default function ReportsPage() {
     return true
   }), [invoices, expCompany, expLocation, expPsr])
 
-  // invoices filtered for charts
+  // invoices for charts (respects chart location picker)
   const chartInvoices = useMemo(() =>
-    chartLocation ? invoices.filter(i => i.location_name === chartLocation) : invoices
+    chartLocation
+      ? invoices.filter(i => i.location_name === chartLocation)
+      : invoices
   , [invoices, chartLocation])
 
   const analytics = useMemo(() => {
-    // by company (uses chartInvoices — location filtered)
-    const byCompany = {}
-    chartInvoices.forEach(inv => {
-      const k = inv.company_name ?? 'Unknown'
-      if (!byCompany[k]) byCompany[k] = { name: k, outstanding: 0, overdue: 0, collected: 0, count: 0 }
-      byCompany[k].outstanding += Number(inv.balance ?? 0)
-      byCompany[k].collected   += Number(inv.payment_received ?? 0)
-      byCompany[k].count++
-      if (callStatus(inv) === 'overdue') byCompany[k].overdue += Number(inv.balance ?? 0)
-    })
+    /*
+      SAME definitions as Dashboard to ensure matching numbers:
+      outstanding = sum of max(0, balance)    → unpaid money still owed
+      collected   = sum of payment_received   → cash received
+      overdue     = outstanding where past due date
+    */
 
-    // by PSR (uses chartInvoices)
-    const byPsr = {}
-    chartInvoices.forEach(inv => {
-      const k = inv.psr_name ?? 'Unknown'
-      if (!byPsr[k]) byPsr[k] = { name: k, outstanding: 0, overdue: 0, count: 0 }
-      byPsr[k].outstanding += Number(inv.balance ?? 0)
-      byPsr[k].count++
-      if (callStatus(inv) === 'overdue') byPsr[k].overdue += Number(inv.balance ?? 0)
-    })
+    function buildGroup(list, keyFn) {
+      const map = {}
+      list.forEach(inv => {
+        const k   = keyFn(inv) ?? 'Unknown'
+        const bal = Math.max(0, Number(inv.balance ?? 0))
+        if (!map[k]) map[k] = { name: k, outstanding: 0, overdue: 0, collected: 0, count: 0 }
+        map[k].outstanding += bal
+        map[k].collected   += Number(inv.payment_received ?? 0)
+        map[k].count++
+        if (callStatus(inv) === 'overdue') map[k].overdue += bal
+      })
+      return Object.values(map).sort((a, b) => b.outstanding - a.outstanding)
+    }
 
-    // by location+company (uses ALL invoices — for the cross table)
-    const byLocationCompany = {}
+    const companyArr = buildGroup(chartInvoices, i => i.company_name)
+    const psrArr     = buildGroup(chartInvoices, i => i.psr_name)
+
+    // Location × Company cross table (uses ALL invoices)
+    const byLocCo = {}
     invoices.forEach(inv => {
       const loc = inv.location_name ?? 'Unknown'
       const com = inv.company_name  ?? 'Unknown'
-      if (!byLocationCompany[loc]) byLocationCompany[loc] = {}
-      if (!byLocationCompany[loc][com]) byLocationCompany[loc][com] = {
+      const bal = Math.max(0, Number(inv.balance ?? 0))
+      if (!byLocCo[loc]) byLocCo[loc] = {}
+      if (!byLocCo[loc][com]) byLocCo[loc][com] = {
         company: com, outstanding: 0, overdue: 0, collected: 0, count: 0,
       }
-      byLocationCompany[loc][com].outstanding += Number(inv.balance ?? 0)
-      byLocationCompany[loc][com].collected   += Number(inv.payment_received ?? 0)
-      byLocationCompany[loc][com].count++
-      if (callStatus(inv) === 'overdue')
-        byLocationCompany[loc][com].overdue += Number(inv.balance ?? 0)
+      byLocCo[loc][com].outstanding += bal
+      byLocCo[loc][com].collected   += Number(inv.payment_received ?? 0)
+      byLocCo[loc][com].count++
+      if (callStatus(inv) === 'overdue') byLocCo[loc][com].overdue += bal
     })
-    const locationKeys = Object.keys(byLocationCompany).sort()
+    const locationKeys = Object.keys(byLocCo).sort()
 
-    // risk distribution pie
+    // Risk pie (all dealers)
     const riskPie = [
       { name: 'Critical', value: dealers.filter(d => d.risk_level === 'critical').length, fill: '#ef4444' },
       { name: 'High',     value: dealers.filter(d => d.risk_level === 'high').length,     fill: '#f97316' },
@@ -84,27 +93,29 @@ export default function ReportsPage() {
       { name: 'Low',      value: dealers.filter(d => d.risk_level === 'low').length,       fill: '#10b981' },
     ].filter(d => d.value > 0)
 
-    const companyArr = Object.values(byCompany).sort((a, b) => b.outstanding - a.outstanding)
-    const psrArr     = Object.values(byPsr).sort((a, b) => b.outstanding - a.outstanding)
-
-    return { companyArr, psrArr, riskPie, byLocationCompany, locationKeys }
+    return { companyArr, psrArr, byLocCo, locationKeys, riskPie }
   }, [chartInvoices, invoices, dealers])
 
-  // ── Export functions ──
+  // ── Exports ──
   function exportOutstanding() {
     const hdr = [
-      'Invoice No','Invoice Date','Recd. Date','Location','Company','Stockist','Town','PSR','Mobile',
-      'Invoice Amount','CN/DN','Net Outstanding','PDC Cheque','PDC Date','PDC Amount',
-      'Credit Days','Due Date','Delay Days','Paid Amount','Paid Date','Balance',
+      'Invoice No','Invoice Date','Inv. Received Date',
+      'Location','Company','Stockist','Town','PSR','Mobile',
+      'Invoice Amount','CN/DN','Net Outstanding',
+      'PDC Cheque','PDC Date','PDC Amount',
+      'Credit Days','Due Date','Delay Days',
+      'Paid Amount','Paid Date','Unpaid Balance',
       'Status','Risk Level','Watchlist','Remarks 1','Remarks 2',
     ]
     const rows = exportInvoices.map(inv => [
-      inv.invoice_number, inv.invoice_date, inv.payment_date ?? '',
-      inv.location_name, inv.company_name, inv.stockist_name, inv.town, inv.psr_name, inv.stockist_mobile,
+      inv.invoice_number, inv.invoice_date, inv.invoice_received_date ?? '',
+      inv.location_name, inv.company_name, inv.stockist_name,
+      inv.town, inv.psr_name, inv.stockist_mobile,
       inv.invoice_amount, inv.cn_dn_amount, inv.net_outstanding,
       inv.pdc_cheque_number ?? '', inv.pdc_date ?? '', inv.pdc_amount,
       inv.credit_days, inv.due_date, inv.delay_days ?? 0,
-      inv.payment_received, inv.payment_date ?? '', inv.balance,
+      inv.payment_received, inv.payment_date ?? '',
+      Math.max(0, Number(inv.balance ?? 0)),
       callStatus(inv), inv.risk_level, inv.watchlist ? 'Yes' : 'No',
       inv.calling_remarks_1 ?? '', inv.calling_remarks_2 ?? '',
     ])
@@ -116,13 +127,15 @@ export default function ReportsPage() {
   }
 
   function exportWatchlist() {
-    const hdr = ['Dealer','Town','Company','PSR','Mobile','Risk Score','Risk Level',
-      'Total Invoices','Times Overdue','Avg Delay (d)','Total Overdue Amount','Open Balance',
+    const hdr = ['Dealer','Town','Company','PSR','Mobile',
+      'Risk Score','Risk Level','Total Invoices','Times Overdue',
+      'Avg Delay (d)','Total Overdue Amt','Open Balance',
       'Last Payment','Watchlist Reason']
     const rows = dealers.filter(d => d.watchlist).map(d => [
       d.name, d.town, d.company_name, d.psr_name, d.mobile,
       d.risk_score, d.risk_level, d.total_invoices, d.overdue_count,
-      Number(d.avg_delay_days ?? 0).toFixed(1), d.total_overdue_amount, d.total_balance,
+      Number(d.avg_delay_days ?? 0).toFixed(1),
+      d.total_overdue_amount, d.total_balance,
       d.last_payment_date ?? '', d.watchlist_reason ?? '',
     ])
     const ws = XLSX.utils.aoa_to_sheet([hdr, ...rows])
@@ -135,43 +148,51 @@ export default function ReportsPage() {
   function exportFull() {
     const wb = XLSX.utils.book_new()
 
-    // Sheet 1 — filtered invoices
-    const inv_hdr = ['Invoice No','Date','Location','Company','Stockist','Town','PSR',
-      'Net Outstanding','Credit Days','Due Date','Delay Days','Paid','Balance','Status']
-    const inv_rows = exportInvoices.map(inv => [
-      inv.invoice_number, inv.invoice_date, inv.location_name, inv.company_name,
-      inv.stockist_name, inv.town, inv.psr_name, inv.net_outstanding,
-      inv.credit_days, inv.due_date, inv.delay_days ?? 0,
-      inv.payment_received, inv.balance, callStatus(inv),
-    ])
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([inv_hdr, ...inv_rows]), 'Invoices')
+    // Sheet 1: Invoices
+    const i_hdr = ['Invoice No','Date','Location','Company','Stockist','Town','PSR',
+      'Invoice Amt','Net Outstanding','Credit Days','Due Date',
+      'Delay Days','Paid Amt','Unpaid Balance','Status']
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      i_hdr,
+      ...exportInvoices.map(inv => [
+        inv.invoice_number, inv.invoice_date,
+        inv.location_name, inv.company_name, inv.stockist_name, inv.town, inv.psr_name,
+        inv.invoice_amount, inv.net_outstanding, inv.credit_days, inv.due_date,
+        inv.delay_days ?? 0, inv.payment_received,
+        Math.max(0, Number(inv.balance ?? 0)), callStatus(inv),
+      ]),
+    ]), 'Invoices')
 
-    // Sheet 2 — by company
-    const comp_hdr = ['Company','Invoice Count','Outstanding','Overdue','Collected']
-    const comp_rows = analytics.companyArr.map(c => [c.name, c.count, c.outstanding, c.overdue, c.collected])
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([comp_hdr, ...comp_rows]), 'By Company')
+    // Sheet 2: By Company
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ['Company','Invoices','Unpaid Outstanding','Overdue','Collected'],
+      ...analytics.companyArr.map(c => [c.name, c.count, c.outstanding, c.overdue, c.collected]),
+    ]), 'By Company')
 
-    // Sheet 3 — by PSR
-    const psr_hdr = ['PSR','Invoice Count','Outstanding','Overdue']
-    const psr_rows = analytics.psrArr.map(p => [p.name, p.count, p.outstanding, p.overdue])
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([psr_hdr, ...psr_rows]), 'By PSR')
+    // Sheet 3: By PSR
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ['PSR','Invoices','Unpaid Outstanding','Overdue','Collected'],
+      ...analytics.psrArr.map(p => [p.name, p.count, p.outstanding, p.overdue, p.collected]),
+    ]), 'By PSR')
 
-    // Sheet 4 — location × company
-    const lc_hdr = ['Location','Company','Invoices','Outstanding','Overdue','Collected']
-    const lc_rows = analytics.locationKeys.flatMap(loc =>
-      Object.values(analytics.byLocationCompany[loc]).map(r => [
-        loc, r.company, r.count, r.outstanding, r.overdue, r.collected,
-      ])
-    )
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([lc_hdr, ...lc_rows]), 'By Location')
+    // Sheet 4: By Location × Company
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ['Location','Company','Invoices','Unpaid Outstanding','Overdue','Collected'],
+      ...analytics.locationKeys.flatMap(loc =>
+        Object.values(analytics.byLocCo[loc]).map(r =>
+          [loc, r.company, r.count, r.outstanding, r.overdue, r.collected]
+        )
+      ),
+    ]), 'By Location')
 
-    // Sheet 5 — watchlist
-    const wl_hdr = ['Dealer','Town','Risk Level','Risk Score','Times Overdue','Avg Delay','Overdue Amt']
-    const wl_rows = dealers.filter(d => d.watchlist).map(d => [
-      d.name, d.town, d.risk_level, d.risk_score, d.overdue_count,
-      Number(d.avg_delay_days ?? 0).toFixed(0), d.total_overdue_amount,
-    ])
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([wl_hdr, ...wl_rows]), 'Watchlist')
+    // Sheet 5: Watchlist
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ['Dealer','Town','Risk Level','Risk Score','Times Overdue','Avg Delay','Overdue Amt'],
+      ...dealers.filter(d => d.watchlist).map(d => [
+        d.name, d.town, d.risk_level, d.risk_score, d.overdue_count,
+        Number(d.avg_delay_days ?? 0).toFixed(0), d.total_overdue_amount,
+      ]),
+    ]), 'Watchlist')
 
     XLSX.writeFile(wb, `PayTrack_Full_${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
@@ -185,35 +206,38 @@ export default function ReportsPage() {
   return (
     <div className="p-5 space-y-5">
 
-      {/* ── Header ── */}
+      {/* Header + export panel */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-sm font-bold text-slate-800">Reports</h1>
           <p className="text-[10px] text-slate-400 mt-0.5">Analytics and Excel exports</p>
         </div>
 
-        {/* Export section */}
         <div className="card p-4 flex flex-wrap gap-3 items-end">
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Export Filters</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
+              Export Filters
+            </p>
             <div className="flex flex-wrap gap-2">
-              <select className="input w-36" value={expCompany} onChange={e => setExpCompany(e.target.value)}>
+              <select className="input w-36" value={expCompany}
+                onChange={e => setExpCompany(e.target.value)}>
                 <option value="">All Companies</option>
                 {allCompanies.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-              <select className="input w-36" value={expLocation} onChange={e => setExpLocation(e.target.value)}>
+              <select className="input w-36" value={expLocation}
+                onChange={e => setExpLocation(e.target.value)}>
                 <option value="">All Locations</option>
                 {allLocations.map(l => <option key={l} value={l}>{l}</option>)}
               </select>
-              <select className="input w-36" value={expPsr} onChange={e => setExpPsr(e.target.value)}>
+              <select className="input w-36" value={expPsr}
+                onChange={e => setExpPsr(e.target.value)}>
                 <option value="">All PSRs</option>
                 {allPsrs.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
               {(expCompany || expLocation || expPsr) && (
                 <button
                   onClick={() => { setExpCompany(''); setExpLocation(''); setExpPsr('') }}
-                  className="text-[11px] text-indigo-600 hover:underline font-medium"
-                >
+                  className="text-[11px] text-indigo-600 hover:underline font-medium">
                   Clear
                 </button>
               )}
@@ -233,56 +257,60 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* ── Chart location filter ── */}
+      {/* Chart location picker */}
       <div className="flex items-center gap-2">
-        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Charts showing:</span>
-        <select className="input w-44" value={chartLocation} onChange={e => setChartLocation(e.target.value)}>
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+          Charts showing:
+        </span>
+        <select className="input w-44" value={chartLocation}
+          onChange={e => setChartLocation(e.target.value)}>
           <option value="">All Locations combined</option>
           {allLocations.map(l => <option key={l} value={l}>{l}</option>)}
         </select>
-        {chartLocation && (
-          <span className="badge badge-indigo">{chartLocation}</span>
-        )}
+        {chartLocation && <span className="badge badge-indigo">{chartLocation}</span>}
       </div>
 
-      {/* ── Charts ── */}
+      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-        {/* Company bar chart */}
+        {/* Company bar */}
         <div className="card p-5">
-          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">
-            Outstanding by Company
+          <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">
+            Unpaid Outstanding by Company
             {chartLocation && <span className="ml-2 badge badge-indigo">{chartLocation}</span>}
           </h2>
-          {analytics.companyArr.length === 0 ? (
-            <div className="flex items-center justify-center h-52 text-slate-400 text-xs">No data</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart
-                data={analytics.companyArr.slice(0, 8).map(d => ({
-                  ...d,
-                  name: d.name.length > 12 ? d.name.slice(0, 12) + '…' : d.name,
-                }))}
-                layout="vertical" barSize={13}
-              >
-                <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false}
-                  tickFormatter={v =>
-                    v >= 100000 ? '₹' + (v / 100000).toFixed(0) + 'L'
-                    : v >= 1000 ? '₹' + (v / 1000).toFixed(0) + 'K' : '₹' + v
-                  }
-                />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }}
-                  width={90} axisLine={false} tickLine={false} />
-                <Tooltip formatter={(v, n) => [fmtCurrency(v), n === 'outstanding' ? 'Outstanding' : 'Overdue']}
-                  contentStyle={tooltipStyle} />
-                <Bar dataKey="outstanding" fill="#6366f1" radius={[0, 4, 4, 0]} />
-                <Bar dataKey="overdue"     fill="#f87171" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
+          {analytics.companyArr.length === 0
+            ? <div className="flex items-center justify-center h-52 text-slate-400 text-xs">No data</div>
+            : (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart
+                  data={analytics.companyArr.slice(0, 8).map(d => ({
+                    ...d,
+                    name: d.name.length > 12 ? d.name.slice(0, 12) + '…' : d.name,
+                  }))}
+                  layout="vertical" barSize={13}
+                >
+                  <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }}
+                    axisLine={false} tickLine={false}
+                    tickFormatter={v =>
+                      v >= 100000 ? '₹' + (v / 100000).toFixed(0) + 'L'
+                      : v >= 1000  ? '₹' + (v / 1000).toFixed(0) + 'K' : '₹' + v
+                    } />
+                  <YAxis type="category" dataKey="name"
+                    tick={{ fontSize: 10, fill: '#64748b' }}
+                    width={90} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    formatter={(v, n) => [fmtCurrency(v), n === 'outstanding' ? 'Unpaid Balance' : 'Overdue']}
+                    contentStyle={tooltipStyle} />
+                  <Bar dataKey="outstanding" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="overdue"     fill="#f87171" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )
+          }
           <div className="flex gap-4 mt-2">
             <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
-              <span className="w-2 h-2 rounded-sm bg-indigo-500 inline-block" /> Outstanding
+              <span className="w-2 h-2 rounded-sm bg-indigo-500 inline-block" /> Unpaid Balance
             </span>
             <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
               <span className="w-2 h-2 rounded-sm bg-red-400 inline-block" /> Overdue
@@ -290,32 +318,35 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* Risk pie chart */}
+        {/* Risk pie */}
         <div className="card p-5">
-          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">
+          <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">
             Dealer Risk Distribution
           </h2>
-          {analytics.riskPie.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie data={analytics.riskPie} cx="50%" cy="50%"
-                  innerRadius={60} outerRadius={90} dataKey="value" paddingAngle={3}>
-                  {analytics.riskPie.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
-                </Pie>
-                <Tooltip contentStyle={tooltipStyle} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex items-center justify-center h-52 text-slate-400 text-xs">No dealer data yet</div>
-          )}
+          {analytics.riskPie.length > 0
+            ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie data={analytics.riskPie} cx="50%" cy="50%"
+                    innerRadius={60} outerRadius={90} dataKey="value" paddingAngle={3}>
+                    {analytics.riskPie.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                  </Pie>
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            )
+            : <div className="flex items-center justify-center h-52 text-slate-400 text-xs">
+                No dealer data yet
+              </div>
+          }
         </div>
       </div>
 
-      {/* ── PSR performance table ── */}
+      {/* PSR table */}
       <div className="card overflow-hidden">
-        <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+        <div className="px-5 py-3 border-b border-slate-100">
+          <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
             PSR Performance
             {chartLocation && <span className="ml-2 badge badge-indigo">{chartLocation}</span>}
           </h2>
@@ -324,21 +355,27 @@ export default function ReportsPage() {
           <table className="w-full">
             <thead>
               <tr>
-                {['PSR','Invoices','Outstanding','Overdue Amount','Overdue %'].map(h => (
+                {['PSR','Invoices','Unpaid Outstanding','Overdue','Collected','Overdue %'].map(h => (
                   <th key={h} className="th">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {analytics.psrArr.map(p => {
-                const pct = p.outstanding > 0 ? Math.round((p.overdue / p.outstanding) * 100) : 0
+                const pct = p.outstanding > 0
+                  ? Math.round((p.overdue / p.outstanding) * 100) : 0
                 return (
                   <tr key={p.name}>
                     <td className="td font-semibold text-slate-700">{p.name}</td>
                     <td className="td text-center text-slate-500">{p.count}</td>
-                    <td className="td text-right font-bold text-slate-800">{fmtCurrency(p.outstanding)}</td>
+                    <td className="td text-right font-bold text-slate-800">
+                      {fmtCurrency(p.outstanding)}
+                    </td>
                     <td className={`td text-right font-semibold ${p.overdue > 0 ? 'text-red-600' : 'text-slate-300'}`}>
                       {fmtCurrency(p.overdue)}
+                    </td>
+                    <td className="td text-right font-semibold text-emerald-600">
+                      {fmtCurrency(p.collected)}
                     </td>
                     <td className="td text-center">
                       <span className={`badge ${pct > 30 ? 'badge-red' : pct > 10 ? 'badge-amber' : 'badge-gray'}`}>
@@ -349,30 +386,34 @@ export default function ReportsPage() {
                 )
               })}
               {analytics.psrArr.length === 0 && (
-                <tr><td colSpan={5} className="td text-center text-slate-400 py-10">No data</td></tr>
+                <tr>
+                  <td colSpan={6} className="td text-center text-slate-400 py-10">No data</td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* ── Location × Company cross table ── */}
+      {/* Location × Company cross table */}
       <div className="card overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100">
-          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Company Performance by Location</h2>
+          <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+            Company Performance by Location
+          </h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr>
-                {['Location','Company','Invoices','Outstanding','Overdue','Collected','Overdue %'].map(h => (
+                {['Location','Company','Invoices','Unpaid Outstanding','Overdue','Collected','Overdue %'].map(h => (
                   <th key={h} className="th">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {analytics.locationKeys.flatMap(loc =>
-                Object.values(analytics.byLocationCompany[loc])
+                Object.values(analytics.byLocCo[loc])
                   .sort((a, b) => b.outstanding - a.outstanding)
                   .map((row, i) => {
                     const pct = row.outstanding > 0
@@ -384,11 +425,15 @@ export default function ReportsPage() {
                         </td>
                         <td className="td font-semibold text-slate-700 text-xs">{row.company}</td>
                         <td className="td text-center text-slate-500">{row.count}</td>
-                        <td className="td text-right font-bold text-slate-800">{fmtCurrency(row.outstanding)}</td>
+                        <td className="td text-right font-bold text-slate-800">
+                          {fmtCurrency(row.outstanding)}
+                        </td>
                         <td className={`td text-right font-semibold ${row.overdue > 0 ? 'text-red-600' : 'text-slate-300'}`}>
                           {fmtCurrency(row.overdue)}
                         </td>
-                        <td className="td text-right font-semibold text-emerald-600">{fmtCurrency(row.collected)}</td>
+                        <td className="td text-right font-semibold text-emerald-600">
+                          {fmtCurrency(row.collected)}
+                        </td>
                         <td className="td text-center">
                           <span className={`badge ${pct > 30 ? 'badge-red' : pct > 10 ? 'badge-amber' : 'badge-gray'}`}>
                             {pct}%
@@ -399,7 +444,9 @@ export default function ReportsPage() {
                   })
               )}
               {analytics.locationKeys.length === 0 && (
-                <tr><td colSpan={7} className="td text-center text-slate-400 py-10">No data</td></tr>
+                <tr>
+                  <td colSpan={7} className="td text-center text-slate-400 py-10">No data</td>
+                </tr>
               )}
             </tbody>
           </table>
