@@ -153,6 +153,11 @@ export default function MasterPage() {
   const { companies, locations, allPsrs, allStockists, loading, addStockist, addPsr, refetch } = useMasterData()
   const [stockistModal, setStockistModal] = useState(null)
   const [psrModal,      setPsrModal]      = useState(null)
+  const [stockistSearch, setStockistSearch] = useState('')
+
+  const filteredStockists = allStockists.filter(s =>
+    s.name.toLowerCase().includes(stockistSearch.toLowerCase())
+  )
 
   if (!isAdmin) return <Navigate to="/" replace />
 
@@ -195,11 +200,20 @@ export default function MasterPage() {
         <div className="card overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
             <h2 className="text-sm font-semibold text-gray-700">
-              Stockists <span className="text-gray-400 font-normal ml-1">({allStockists.length})</span>
+              Stockists <span className="text-gray-400 font-normal ml-1">({filteredStockists.length})</span>
             </h2>
-            <button onClick={() => setStockistModal({})} className="btn-primary text-xs">
-              <Plus size={12} /> Add
-            </button>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Search stockists..."
+                value={stockistSearch}
+                onChange={e => setStockistSearch(e.target.value)}
+                className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs w-44 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+              <button onClick={() => setStockistModal({})} className="btn-primary text-xs">
+                <Plus size={12} /> Add
+              </button>
+            </div>
           </div>
           <div className="overflow-auto max-h-80">
             <table className="w-full">
@@ -209,7 +223,7 @@ export default function MasterPage() {
                 </tr>
               </thead>
               <tbody>
-                {allStockists.map(s => (
+                {filteredStockists.map(s => (
                   <tr key={s.id} className="hover:bg-gray-50">
                     <td className="td font-medium text-sm">{s.name}</td>
                     <td className="td text-gray-500 text-xs">{s.town}</td>
@@ -225,8 +239,10 @@ export default function MasterPage() {
                     </td>
                   </tr>
                 ))}
-                {allStockists.length === 0 && (
-                  <tr><td colSpan={7} className="td text-center text-gray-400 py-8">No stockists yet</td></tr>
+                {filteredStockists.length === 0 && (
+                  <tr><td colSpan={7} className="td text-center text-gray-400 py-8">
+                    {stockistSearch ? 'No stockists match your search' : 'No stockists yet'}
+                  </td></tr>
                 )}
               </tbody>
             </table>
