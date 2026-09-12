@@ -44,19 +44,45 @@ export function calcDelayDays(dueDateStr) {
   } catch { return 0 }
 }
 
-// ── Call status from an invoice_details row ───────────────────────
+// ── Money helpers ─────────────────────────────────────────────────
 
+/* Balance can go negative on overpayment. Never show that. */
+export function unpaid(inv) {
+  return Math.max(0, Number(inv?.balance ?? 0))
+}
+
+/* Part-paid but still owing money. */
+export function isPartial(inv) {
+  return Number(inv?.payment_received ?? 0) > 0 && Number(inv?.balance ?? 0) > 0
+}
+
+// ── Call status from an invoice_details row ───────────────────────
+/*
+   FIXED: the old version could never return 'partial', so the
+   CALL_STATUS.partial entry was dead code and the 28 part-paid
+   invoices in the DB were badged 'Upcoming' or 'Overdue' with no
+   sign that money had already come in against them.
+
+   Timing still wins when a call is actually needed — an overdue
+   invoice is overdue whether or not it is part-paid. 'partial'
+   only replaces the otherwise uninformative 'upcoming'.
+*/
 export function callStatus(inv) {
-  const bal = Number(inv.balance ?? 0)
+  const bal = Number(inv?.balance ?? 0)
   if (bal <= 0) return 'paid'
-  if (!inv.due_date) return 'upcoming'
-  try {
-    const due = parseISO(inv.due_date)
-    if (isPast(due) && !isToday(due)) return 'overdue'
-    if (isToday(due))                  return 'due_today'
-    if (isTomorrow(due))               return 'call_due'
-  } catch {}
-  return 'upcoming'
+
+  let timing = 'upcoming'
+  if (inv?.due_date) {
+    try {
+      const due = parseISO(inv.due_date)
+      if (isPast(due) && !isToday(due)) timing = 'overdue'
+      else if (isToday(due))            timing = 'due_today'
+      else if (isTomorrow(due))         timing = 'call_due'
+    } catch { /* fall through to 'upcoming' */ }
+  }
+
+  if (timing === 'upcoming' && isPartial(inv)) return 'partial'
+  return timing
 }
 
 // ── Config maps ───────────────────────────────────────────────────
@@ -75,6 +101,17 @@ export const RISK = {
   medium:   { label: 'Medium Risk',   cls: 'badge-amber',  dot: 'bg-amber-400',   bar: 'bg-amber-400'   },
   high:     { label: 'High Risk',     cls: 'badge-orange', dot: 'bg-orange-400',  bar: 'bg-orange-400'  },
   critical: { label: 'Critical Risk', cls: 'badge-red',    dot: 'bg-red-500',     bar: 'bg-red-500'     },
+}
+
+/*
+   RISK is keyed lowercase. If anything ever writes 'High' or
+   'CRITICAL' into stockists.risk_level, RISK[level] returns
+   undefined and every dealer silently renders as "Low Risk" —
+   a badge that says the opposite of the truth. Always look up
+   through this.
+*/
+export function riskOf(level) {
+  return RISK[String(level ?? '').toLowerCase()] ?? RISK.low
 }
 
 export function cx(...classes) {
