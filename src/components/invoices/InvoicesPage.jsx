@@ -4,9 +4,10 @@ import { useMasterData } from '../../hooks/useMasterData'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 import { fmtCurrency, fmtDateShort, riskOf, CALL_STATUS, cx } from '../../lib/utils'
+import * as XLSX from 'xlsx'
 import InvoiceModal from './InvoiceModal'
 import {
-  Plus, Search, X, Pencil, AlertTriangle, ChevronLeft, ChevronRight, Loader2,
+  Plus, Search, X, Pencil, AlertTriangle, ChevronLeft, ChevronRight, Loader2, Download,
 } from 'lucide-react'
 
 const PAGE_SIZES = [50, 100, 250, 500]
@@ -111,12 +112,61 @@ export default function InvoicesPage() {
 
   const {
     rows, totalCount, outstanding, collected,
-    loading, error, totalPages, saveInvoice,
+    loading, error, totalPages, saveInvoice, fetchAllForExport,
   } = useInvoicesPage(filters, page, pageSize)
+
+  const [exporting, setExporting] = useState(false)
 
   /* Prefetch the next page so paging forward feels instant.
      The result lands in the shared cache; no extra render. */
   useInvoicesPage(filters, Math.min(page + 1, totalPages), pageSize)
+
+
+  /* Exports EVERY row matching the current filters, not just the
+     page on screen. Pulls the full filtered set on demand — this is
+     the only place the app still does a full read. */
+  async function exportExcel() {
+    setExporting(true)
+    try {
+      const all = await fetchAllForExport()
+      const header = [
+        'Invoice No','Invoice Date','Recd. Date','Inv. Received Date',
+        'Location','Company','Stockist','Town','PSR','Mobile',
+        'Invoice Amount','CN / DN','Net Outstanding',
+        'PDC Cheque','PDC Date','PDC Amount',
+        'Credit Days','Due Date','Delay Days',
+        'Paid Amount','Paid Date','Unpaid Balance',
+        'Status','Risk Level','Watchlist','Remarks 1','Remarks 2',
+      ]
+      const rows = all.map(inv => [
+        inv.invoice_number, inv.invoice_date, inv.payment_date ?? '',
+        inv.invoice_received_date ?? '',
+        inv.location_name, inv.company_name, inv.stockist_name,
+        inv.town, inv.psr_name, inv.stockist_mobile,
+        Number(inv.invoice_amount ?? 0), Number(inv.cn_dn_amount ?? 0),
+        Number(inv.net_outstanding ?? 0),
+        inv.pdc_cheque_number ?? '', inv.pdc_date ?? '', Number(inv.pdc_amount ?? 0),
+        inv.credit_days, inv.due_date, inv.delay_days ?? 0,
+        Number(inv.payment_received ?? 0), inv.payment_date ?? '',
+        Math.max(0, Number(inv.balance ?? 0)),
+        (CALL_STATUS[inv.call_status] ?? CALL_STATUS.upcoming).label,
+        inv.risk_level, inv.watchlist ? 'Yes' : 'No',
+        inv.calling_remarks_1 ?? '', inv.calling_remarks_2 ?? '',
+      ])
+      const ws = XLSX.utils.aoa_to_sheet([header, ...rows])
+      ws['!cols'] = header.map(() => ({ wch: 17 }))
+      ws['!autofilter'] = { ref: XLSX.utils.encode_range({
+        s: { c: 0, r: 0 }, e: { c: header.length - 1, r: rows.length } }) }
+      ws['!freeze'] = { xSplit: 0, ySplit: 1 }
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Invoices')
+      XLSX.writeFile(wb, `Invoices_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    } catch (e) {
+      alert('Export failed: ' + e.message)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const handleEdit = useCallback(inv => setModal(inv), [])
 
@@ -138,9 +188,18 @@ export default function InvoicesPage() {
             {loading ? 'Loading…' : `Showing ${from}–${to} of ${totalCount.toLocaleString('en-IN')}`}
           </p>
         </div>
-        <button onClick={() => setModal({})} className="btn-primary">
-          <Plus size={13} /> Add Invoice
-        </button>
+        <div className="flex gap-2">
+          <button onClick={exportExcel} disabled={exporting || totalCount === 0}
+            className="btn-secondary disabled:opacity-50"
+            title="Export every row matching the current filters">
+            {exporting
+              ? <><Loader2 size={12} className="animate-spin" /> Exporting {totalCount.toLocaleString('en-IN')}…</>
+              : <><Download size={12} /> Export Excel{anyFilter ? ` (${totalCount.toLocaleString('en-IN')})` : ''}</>}
+          </button>
+          <button onClick={() => setModal({})} className="btn-primary">
+            <Plus size={13} /> Add Invoice
+          </button>
+        </div>
       </div>
 
       <div className="card p-3 flex flex-wrap gap-2 items-center">
