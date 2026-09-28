@@ -1,15 +1,37 @@
 import { createClient } from '@supabase/supabase-js'
 
-const url = import.meta.env.VITE_SUPABASE_URL
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY
+// Values pasted into a hosting dashboard often carry stray whitespace or quotes.
+const clean = (v) => (v ?? '').trim().replace(/^['"]+|['"]+$/g, '').trim()
 
-export const isSupabaseConfigured = Boolean(url && key)
+const url = clean(import.meta.env.VITE_SUPABASE_URL)
+const key = clean(import.meta.env.VITE_SUPABASE_ANON_KEY)
 
-// Fall back to placeholder values instead of throwing at module load time.
-// Throwing here would crash the whole script before React ever mounts,
-// leaving the page blank with no visible error. Missing/invalid config is
-// instead surfaced as a real screen — see ConfigError in main.jsx.
-export const supabase = createClient(
-  url || 'https://placeholder.supabase.co',
-  key || 'placeholder-anon-key'
-)
+function findConfigError() {
+  if (!url && !key) return 'VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are not set.'
+  if (!url) return 'VITE_SUPABASE_URL is not set.'
+  if (!key) return 'VITE_SUPABASE_ANON_KEY is not set.'
+  try {
+    const { protocol } = new URL(url)
+    if (protocol !== 'https:' && protocol !== 'http:') throw new Error()
+  } catch {
+    return `VITE_SUPABASE_URL is not a valid URL (got "${url}"). It should look like https://your-project-id.supabase.co`
+  }
+  return null
+}
+
+let configError = findConfigError()
+let client = null
+
+if (!configError) {
+  try {
+    client = createClient(url, key)
+  } catch (e) {
+    configError = e.message
+  }
+}
+
+export const supabaseConfigError = configError
+
+// Never throw at module load: that kills the script before React mounts and
+// leaves a blank page. main.jsx shows supabaseConfigError on screen instead.
+export const supabase = client ?? createClient('https://placeholder.supabase.co', 'placeholder-anon-key')

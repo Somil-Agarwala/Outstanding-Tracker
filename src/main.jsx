@@ -2,7 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { AuthProvider } from './hooks/useAuth'
-import { isSupabaseConfigured } from './lib/supabase'
+import { supabaseConfigError } from './lib/supabase'
 import App from './App'
 import './index.css'
 
@@ -40,14 +40,15 @@ function ConfigError() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
       <div className="max-w-md text-center">
         <h1 className="text-lg font-semibold text-gray-900">Configuration needed</h1>
+        <p className="mt-2 text-sm text-gray-900 break-words">{supabaseConfigError}</p>
         <p className="mt-2 text-sm text-gray-600">
-          Supabase environment variables are missing. Set{' '}
+          Set{' '}
           <code className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded">VITE_SUPABASE_URL</code>{' '}
           and{' '}
           <code className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded">VITE_SUPABASE_ANON_KEY</code>{' '}
           (locally in a <code className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded">.env</code> file
           copied from <code className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded">.env.example</code>,
-          or in your hosting provider's project settings), then reload.
+          or in your hosting provider's project settings), then redeploy.
         </p>
       </div>
     </div>
@@ -57,7 +58,7 @@ function ConfigError() {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ErrorBoundary>
-      {isSupabaseConfigured ? (
+      {!supabaseConfigError ? (
         <BrowserRouter>
           <AuthProvider>
             <App />
