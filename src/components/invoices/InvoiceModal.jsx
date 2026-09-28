@@ -1,8 +1,18 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Loader2 } from 'lucide-react'
+import { X, Loader2, AlertTriangle } from 'lucide-react'
 import { useMasterData } from '../../hooks/useMasterData'
+import { supabase } from '../../lib/supabase'
+import { dayNum, todayNum } from '../../lib/ledger'
 import { fmtCurrency, calcDueDate, fmtDate, todayISO } from '../../lib/utils'
+
+function dateProblem(label, iso, { future = false } = {}) {
+  if (!iso) return null
+  const n = dayNum(iso)
+  if (n == null) return `${label} looks wrong — check the year`
+  if (!future && n > todayNum()) return `${label} is in the future`
+  return null
+}
 
 const EMPTY = {
   invoice_number:        '',
@@ -76,6 +86,21 @@ export default function InvoiceModal({ invoice, onSave, onClose }) {
   const balance = netOut - paid
   const dueDate = calcDueDate(form.invoice_date, form.credit_days)
 
+  const [dupe, setDupe] = useState(null)
+  useEffect(() => {
+    const number = form.invoice_number.trim()
+    if (!number || !form.stockist_id) { setDupe(null); return }
+    let alive = true
+    const t = setTimeout(async () => {
+      let q = supabase.from('invoices').select('id, invoice_date, balance')
+        .eq('stockist_id', form.stockist_id).ilike('invoice_number', number).limit(3)
+      if (invoice?.id) q = q.neq('id', invoice.id)
+      const { data } = await q
+      if (alive) setDupe(data?.length ? { number, count: data.length } : null)
+    }, 500)
+    return () => { alive = false; clearTimeout(t) }
+  }, [form.invoice_number, form.stockist_id, invoice?.id])
+
   async function handleSave(e) {
     e.preventDefault()
     setErrMsg('')
@@ -84,6 +109,13 @@ export default function InvoiceModal({ invoice, onSave, onClose }) {
     if (!form.company_id)            { setErrMsg('Please select a company');    return }
     if (!form.stockist_id)           { setErrMsg('Please select a stockist');   return }
     if (!form.location_id)           { setErrMsg('Stockist has no location — check Master Data'); return }
+    const dateErr = dateProblem('Invoice date', form.invoice_date, { future: true })
+      || dateProblem('Payment date', form.payment_date)
+      || dateProblem('PDC date', form.pdc_date, { future: true })
+    if (dateErr) { setErrMsg(dateErr); return }
+    if (paid > 0 && !form.payment_date) {
+      setErrMsg('Enter the payment date too, so we can tell whether it was paid on time'); return
+    }
 
     setBusy(true)
     try {
@@ -312,8 +344,16 @@ export default function InvoiceModal({ invoice, onSave, onClose }) {
             </div>
           </section>
 
+          {dupe && (
+            <div role="alert" className="flex items-center gap-2.5 px-4 py-3 bg-warn-bg border border-warn-line rounded-[10px]">
+              <AlertTriangle size={16} className="text-warn shrink-0" aria-hidden="true" />
+              <span className="text-[13px] text-warn-ink">
+                {selectedStockist?.name ?? 'This dealer'} already has {dupe.count > 1 ? `${dupe.count} invoices` : 'an invoice'} numbered {dupe.number}. Check it is not a re-entry before saving.
+              </span>
+            </div>
+          )}
           {errMsg && (
-            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">
+            <p role="alert" className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">
               {errMsg}
             </p>
           )}

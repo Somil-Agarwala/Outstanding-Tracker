@@ -2,13 +2,11 @@ import { useState, useEffect, useMemo, useCallback, memo } from 'react'
 import { useInvoicesPage } from '../../hooks/useInvoicesPage'
 import { useMasterData } from '../../hooks/useMasterData'
 import { useAuth } from '../../hooks/useAuth'
-import { fmtCurrency, fmtDateShort, riskOf, CALL_STATUS, cx } from '../../lib/utils'
+import { fmtCurrency, fmtDateShort, CALL_STATUS } from '../../lib/utils'
 import InvoiceModal from './InvoiceModal'
 import * as XLSX from 'xlsx'
-import {
-  Plus, Search, X, Pencil, AlertTriangle, ChevronLeft, ChevronRight,
-  Loader2, Download,
-} from 'lucide-react'
+import { Plus, Search, X, Pencil, AlertTriangle, Loader2, Download, Check } from 'lucide-react'
+import { Card, RiskBadge, StatusBadge, ErrorState, NoResults, EmptyState, LoadingRows, Pager } from '../ui'
 
 const PAGE_SIZES = [50, 100, 250, 500]
 
@@ -68,58 +66,59 @@ function alignStyle(align) {
   return {}
 }
 
+const ROW_BG = { overdue: '#fdf6f4', due_today: '#fffdf5', call_due: '#fffdf5', partial: '#fffdf5' }
+
 /* memo so changing one filter does not re-render every visible row */
 const Row = memo(function Row({ inv, onEdit }) {
-  const cs      = inv.call_status
-  const meta    = CALL_STATUS[cs] ?? CALL_STATUS.upcoming
-  const risk    = riskOf(inv.risk_level)
-  const owed    = Math.max(0, Number(inv.balance ?? 0))
-  const urgent  = cs === 'call_due' || cs === 'due_today'
-  const rowBg   = inv.watchlist ? '#fff8f8' : urgent ? '#fff1f5' : '#ffffff'
+  const cs    = inv.call_status
+  const owed  = Math.max(0, Number(inv.balance ?? 0))
+  const rowBg = ROW_BG[cs] ?? '#ffffff'
 
   function cell(c) {
     const raw = c.from ? inv[c.from] : inv[c.key]
     switch (c.type) {
       case 'date':
-        return <span className="text-gray-500">{fmtDateShort(raw)}</span>
+        return <span className="text-xs text-muted">{fmtDateShort(raw)}</span>
       case 'money':
-        return <span className="font-mono">{fmtCurrency(raw)}</span>
+        return <span className={`font-mono text-xs ${Number(raw) ? 'text-ink' : 'text-dim'}`}>{fmtCurrency(raw)}</span>
       case 'balance':
-        return <span className="font-mono font-bold text-gray-800">{fmtCurrency(owed)}</span>
+        return <span className="font-mono text-[13px] font-semibold text-ink">{fmtCurrency(owed)}</span>
       case 'delay':
         return Number(raw) > 0
-          ? <span className="badge badge-red">{raw}d</span>
-          : <span className="text-gray-300">—</span>
+          ? <span className="text-xs font-semibold text-bad">{raw}d</span>
+          : <span className="text-xs text-dim">—</span>
       case 'status':
-        return <span className={cx('badge', meta.cls)}>{meta.label}</span>
+        return <StatusBadge status={cs} />
       case 'risk':
-        return <span className={cx('badge', risk.cls)}>{risk.label}</span>
+        return <RiskBadge level={inv.risk_level} />
       case 'edit':
         return (
-          <button onClick={() => onEdit(inv)} aria-label="Edit invoice"
-            className="text-indigo-600 hover:text-indigo-800">
-            <Pencil size={13} />
+          <button type="button" onClick={() => onEdit(inv)} aria-label={`Edit invoice ${inv.invoice_number}`}
+            className="text-brand hover:text-brand-dark p-1">
+            <Pencil size={14} />
           </button>
         )
       default:
         if (c.key === 'invoice_number')
-          return <span className="font-mono text-[11px] font-bold text-indigo-700">{raw}</span>
+          return <span className="font-mono text-[11.5px] font-semibold text-brand">{raw}</span>
         if (c.key === 'stockist_name')
           return (
-            <span className="flex items-center gap-1 min-w-0">
-              <span className="font-semibold text-gray-800 text-xs truncate">{raw}</span>
-              {inv.watchlist && <AlertTriangle size={10} className="text-red-500 shrink-0" />}
+            <span className="flex items-center gap-1.5 min-w-0">
+              <span className="font-semibold text-ink text-[12.5px] truncate" title={raw}>{raw}</span>
+              {inv.watchlist && <AlertTriangle size={11} className="text-bad shrink-0" aria-label="On watchlist" />}
             </span>
           )
         if (c.mono)
-          return <span className="font-mono text-[11px] text-gray-500">{raw ?? '—'}</span>
-        return <span className="text-gray-500 truncate" title={raw ?? ''}>{raw ?? '—'}</span>
+          return <span className="font-mono text-[11.5px] text-muted">{raw || '—'}</span>
+        if (c.key === 'calling_remarks_1')
+          return <span className="text-[11.5px] text-faint truncate" title={raw ?? ''}>{raw || '—'}</span>
+        return <span className="text-xs text-muted truncate" title={raw ?? ''}>{raw ?? '—'}</span>
     }
   }
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: GRID, background: rowBg }}
-      className="border-b border-gray-100 hover:brightness-[0.985]">
+      className="border-b border-line-soft hover:brightness-[0.985]">
       {COLS.map(c => {
         const sticky = c.stick
           ? {
@@ -127,12 +126,12 @@ const Row = memo(function Row({ inv, onEdit }) {
               left: c.stick === 1 ? STICK_1 : STICK_2,
               background: rowBg,
               zIndex: 2,
-              boxShadow: c.stick === 2 ? '6px 0 8px -6px rgba(0,0,0,.12)' : undefined,
+              boxShadow: c.stick === 2 ? '6px 0 8px -6px rgba(21,23,26,0.12)' : undefined,
             }
           : {}
         return (
           <div key={c.key}
-            style={{ padding: '7px 12px', whiteSpace: 'nowrap', display: 'flex',
+            style={{ padding: '11px 12px', whiteSpace: 'nowrap', display: 'flex', minWidth: 0,
                      alignItems: 'center', ...alignStyle(c.align), ...sticky }}>
             {cell(c)}
           </div>
@@ -155,6 +154,13 @@ export default function InvoicesPage() {
   const [page,      setPage]      = useState(1)
   const [modal,     setModal]     = useState(null)
   const [exporting, setExporting] = useState(false)
+  const [toast,     setToast]     = useState('')
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(''), 4000)
+    return () => clearTimeout(t)
+  }, [toast])
 
   const search = useDebounced(searchRaw, 1000)
 
@@ -166,7 +172,7 @@ export default function InvoicesPage() {
 
   const {
     rows, totalCount, outstanding, collected,
-    loading, error, totalPages, saveInvoice, fetchAllForExport,
+    loading, error, totalPages, saveInvoice, fetchAllForExport, refetch,
   } = useInvoicesPage(filters, page, pageSize)
 
   /* Prefetch the next page so paging forward feels instant. */
@@ -227,47 +233,47 @@ export default function InvoicesPage() {
   const from = totalCount === 0 ? 0 : (page - 1) * pageSize + 1
   const to   = Math.min(page * pageSize, totalCount)
 
-  return (
-    <div className="p-5 space-y-4">
+  const sel = on => `input w-auto px-2.5 text-[12.5px] ${on ? 'border-brand' : ''}`
 
-      <div className="flex items-start justify-between flex-wrap gap-3">
+  return (
+    <div className="page gap-3.5">
+
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-lg font-bold text-gray-800">Invoices</h1>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {loading
+          <h1 className="page-title">Invoices</h1>
+          <p className="page-sub">
+            {loading && !rows.length
               ? 'Loading…'
-              : `Showing ${from}–${to} of ${totalCount.toLocaleString('en-IN')}`}
+              : `Showing ${from}–${to} of ${totalCount.toLocaleString('en-IN')} ${anyFilter ? 'matching ' : ''}invoices`}
           </p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={exportExcel} disabled={exporting || totalCount === 0}
-            className="btn-primary disabled:opacity-50"
-            title="Exports every row matching the current filters">
+        <div className="flex gap-2 flex-wrap">
+          <button type="button" onClick={exportExcel} disabled={exporting || totalCount === 0}
+            className="btn-primary" title="Exports every row matching the current filters, not just this page">
             {exporting
-              ? <><Loader2 size={13} className="animate-spin" /> Exporting {totalCount.toLocaleString('en-IN')}…</>
-              : <><Download size={13} /> Export Excel{anyFilter ? ` (${totalCount.toLocaleString('en-IN')})` : ''}</>}
+              ? <><Loader2 size={15} className="animate-spin" /> Exporting {totalCount.toLocaleString('en-IN')}…</>
+              : <><Download size={15} aria-hidden="true" /> Export Excel ({totalCount.toLocaleString('en-IN')})</>}
           </button>
-          <button onClick={() => setModal({})} className="btn-secondary">
-            <Plus size={13} /> Add Invoice
+          <button type="button" onClick={() => setModal({})} className="btn-secondary min-h-[42px]">
+            <Plus size={14} aria-hidden="true" /> Add Invoice
           </button>
         </div>
       </div>
 
       {/* ── Filters ───────────────────────────────────────── */}
-      <div className="card p-3 flex flex-wrap gap-2 items-center">
-        <div className="relative">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+      <Card className="px-4 py-3.5 flex flex-wrap gap-2.5 items-center">
+        <div className="relative w-full sm:w-auto">
+          <Search size={14} className="absolute left-[11px] top-1/2 -translate-y-1/2 text-faint" aria-hidden="true" />
           <input value={searchRaw} onChange={e => setSearchRaw(e.target.value)}
-            aria-label="Search invoices"
+            aria-label="Search invoices" type="search"
             placeholder="Search invoice or stockist…"
-            className="input pl-8 w-56 text-xs py-1.5" />
+            className="input pl-8 text-[12.5px] sm:w-[225px]" />
           {searchRaw !== search && (
-            <Loader2 size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 animate-spin" />
+            <Loader2 size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-faint animate-spin" />
           )}
         </div>
 
-        <select value={status} onChange={e => setStatus(e.target.value)}
-          aria-label="Status" className="input w-auto text-xs py-1.5">
+        <select value={status} onChange={e => setStatus(e.target.value)} aria-label="Status" className={sel(status)}>
           <option value="">All Status</option>
           <option value="all_due">All Due</option>
           <option value="overdue">Overdue</option>
@@ -278,78 +284,70 @@ export default function InvoicesPage() {
           <option value="paid">Paid</option>
         </select>
 
-        <select value={company} onChange={e => setCompany(e.target.value)}
-          aria-label="Company" className="input w-auto text-xs py-1.5">
+        <select value={company} onChange={e => setCompany(e.target.value)} aria-label="Company" className={sel(company)}>
           <option value="">All Companies</option>
           {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
 
-        <select value={psr} onChange={e => setPsr(e.target.value)}
-          aria-label="PSR" className="input w-auto text-xs py-1.5">
+        <select value={psr} onChange={e => setPsr(e.target.value)} aria-label="PSR" className={sel(psr)}>
           <option value="">All PSRs</option>
           {allPsrs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
 
         {isAdmin && (
-          <select value={location} onChange={e => setLocation(e.target.value)}
-            aria-label="Location" className="input w-auto text-xs py-1.5">
+          <select value={location} onChange={e => setLocation(e.target.value)} aria-label="Location" className={sel(location)}>
             <option value="">All Locations</option>
             {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         )}
 
         <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
-          aria-label="Rows per page" className="input w-auto text-xs py-1.5">
+          aria-label="Rows per page" className={sel(false)}>
           {PAGE_SIZES.map(n => <option key={n} value={n}>{n} / page</option>)}
         </select>
 
         {anyFilter && (
-          <button onClick={clearFilters} className="btn-secondary text-xs py-1.5">
-            <X size={12} /> Clear
+          <button type="button" onClick={clearFilters} className="btn-secondary px-3.5 text-[12.5px]">
+            <X size={13} aria-hidden="true" /> Clear
           </button>
         )}
 
-        <div className="ml-auto flex gap-5 text-xs">
-          <span className="text-gray-400">
-            Outstanding <b className="text-gray-800 font-mono text-[13px]">{fmtCurrency(outstanding)}</b>
+        <div className="w-full xl:w-auto xl:ml-auto flex gap-5 items-baseline">
+          <span className="text-[12.5px] text-muted">
+            Outstanding <b className="font-mono text-bad text-[14.5px]">{fmtCurrency(outstanding)}</b>
           </span>
-          <span className="text-gray-400">
-            Collected <b className="text-emerald-600 font-mono text-[13px]">{fmtCurrency(collected)}</b>
+          <span className="text-[12.5px] text-muted">
+            Collected <b className="font-mono text-good text-[14.5px]">{fmtCurrency(collected)}</b>
           </span>
         </div>
-      </div>
-
-      {error && (
-        <div className="card p-4 border-red-200">
-          <p className="text-sm text-red-700 font-semibold">Could not load invoices</p>
-          <p className="text-xs text-gray-500 mt-1">{error}</p>
-        </div>
-      )}
+      </Card>
 
       {/* ── Table ─────────────────────────────────────────── */}
-      <div className="card overflow-hidden">
-        <div className="overflow-auto max-h-[calc(100vh-290px)] relative">
-          {loading && (
-            <div className="absolute inset-0 bg-white/60 z-20 flex items-start justify-center pt-20">
-              <Loader2 size={20} className="animate-spin text-indigo-500" />
+      <Card className="overflow-hidden flex flex-col">
+        {error ? (
+          <ErrorState message={error} onRetry={refetch} />
+        ) : (
+        <div className="overflow-auto max-h-[calc(100vh-300px)] min-h-[320px] relative">
+          {loading && rows.length > 0 && (
+            <div className="absolute inset-0 bg-white/60 z-50 flex items-start justify-center pt-20">
+              <Loader2 size={20} className="animate-spin text-brand" />
             </div>
           )}
 
           <div style={{ minWidth: MIN_W }}>
-            {/* header */}
             <div style={{ display: 'grid', gridTemplateColumns: GRID }}
-              className="bg-slate-50 border-b border-gray-200 sticky top-0 z-30">
+              className="bg-surface border-b border-line sticky top-0 z-30">
               {COLS.map(c => {
                 const sticky = c.stick
                   ? { position: 'sticky', left: c.stick === 1 ? STICK_1 : STICK_2,
-                      background: '#f8fafc', zIndex: 40,
-                      boxShadow: c.stick === 2 ? '6px 0 8px -6px rgba(0,0,0,.12)' : undefined }
+                      background: '#faf9f5', zIndex: 40,
+                      boxShadow: c.stick === 2 ? '6px 0 8px -6px rgba(21,23,26,0.12)' : undefined }
                   : {}
                 return (
                   <div key={c.key}
-                    style={{ padding: '8px 12px', whiteSpace: 'nowrap', display: 'flex',
+                    style={{ padding: '11px 12px', whiteSpace: 'nowrap', display: 'flex',
                              alignItems: 'center', ...alignStyle(c.align), ...sticky }}
-                    className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                    className="text-[10.5px] font-semibold uppercase tracking-[0.04em] text-faint">
                     {c.label}
                   </div>
                 )
@@ -357,35 +355,36 @@ export default function InvoicesPage() {
             </div>
 
             {rows.map(inv => <Row key={inv.id} inv={inv} onEdit={handleEdit} />)}
-
-            {!loading && rows.length === 0 && (
-              <div className="py-12 text-center text-sm text-gray-400">
-                {anyFilter ? 'No invoices match these filters' : 'No invoices yet'}
-              </div>
-            )}
           </div>
+
+          {loading && rows.length === 0 && (
+            <div className="px-6 sticky left-0 max-w-[900px]"><LoadingRows /></div>
+          )}
+          {!loading && rows.length === 0 && (
+            <div className="sticky left-0 max-w-[900px] mx-auto">
+              {anyFilter
+                ? <NoResults query={search} what="invoice" onClear={clearFilters} />
+                : <EmptyState title="No invoices yet" body="Add your first invoice to start tracking what is owed." />}
+            </div>
+          )}
         </div>
+        )}
 
         {/* ── Pagination ──────────────────────────────────── */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-100">
-          <p className="text-[11px] text-gray-400">
+        <div className="flex items-center justify-between gap-3 flex-wrap px-5 py-[13px] border-t border-line">
+          <p className="text-xs text-faint">
             Invoice No and Stockist stay pinned while scrolling · {COLS.length} columns
           </p>
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] text-gray-500 mr-1">Page {page} of {totalPages}</span>
-            <button onClick={() => setPage(1)} disabled={page <= 1}
-              className="btn-secondary text-xs py-1 px-2 disabled:opacity-40">First</button>
-            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
-              aria-label="Previous page"
-              className="btn-secondary text-xs py-1 px-2 disabled:opacity-40"><ChevronLeft size={13} /></button>
-            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
-              aria-label="Next page"
-              className="btn-secondary text-xs py-1 px-2 disabled:opacity-40"><ChevronRight size={13} /></button>
-            <button onClick={() => setPage(totalPages)} disabled={page >= totalPages}
-              className="btn-secondary text-xs py-1 px-2 disabled:opacity-40">Last</button>
-          </div>
+          <Pager page={page} totalPages={totalPages} setPage={setPage} />
         </div>
-      </div>
+      </Card>
+
+      {toast && (
+        <div role="status" className="fixed z-50 left-1/2 -translate-x-1/2 bottom-[88px] md:bottom-6 flex items-center gap-2.5 px-4 py-3.5 bg-good-bg border border-good-line rounded-[10px] shadow-lg">
+          <Check size={17} strokeWidth={2.4} className="text-good" aria-hidden="true" />
+          <span className="text-[13px] text-good-ink">{toast}</span>
+        </div>
+      )}
 
       {modal !== null && (
         <InvoiceModal
@@ -393,7 +392,10 @@ export default function InvoicesPage() {
           companies={companies}
           stockists={allStockists}
           locations={locations}
-          onSave={(payload, id) => saveInvoice(payload, id, profile?.id)}
+          onSave={async (payload, id) => {
+            await saveInvoice(payload, id, profile?.id)
+            setToast(`Invoice ${payload.invoice_number} ${id ? 'updated' : 'saved'}`)
+          }}
           onClose={() => setModal(null)}
         />
       )}

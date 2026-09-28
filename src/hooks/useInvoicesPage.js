@@ -96,6 +96,7 @@ export function useInvoicesPage(filters = {}, page = 1, pageSize = PAGE_SIZE) {
     }
     invalidate('invoices')
     invalidate('dashboard')
+    invalidate('ledger')
     await load()
   }
 
@@ -109,6 +110,7 @@ export function useInvoicesPage(filters = {}, page = 1, pageSize = PAGE_SIZE) {
     }
     invalidate('invoices')
     invalidate('dashboard')
+    invalidate('ledger')
     await load()
   }
 

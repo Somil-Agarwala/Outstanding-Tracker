@@ -87,10 +87,10 @@ export default function ReportsPage() {
 
     // Risk pie (all dealers)
     const riskPie = [
-      { name: 'Critical', value: dealers.filter(d => d.risk_level === 'critical').length, fill: '#ef4444' },
-      { name: 'High',     value: dealers.filter(d => d.risk_level === 'high').length,     fill: '#f97316' },
-      { name: 'Medium',   value: dealers.filter(d => d.risk_level === 'medium').length,   fill: '#f59e0b' },
-      { name: 'Low',      value: dealers.filter(d => d.risk_level === 'low').length,       fill: '#10b981' },
+      { name: 'Critical', value: dealers.filter(d => d.risk_level === 'critical').length, fill: '#6b1d12' },
+      { name: 'High',     value: dealers.filter(d => d.risk_level === 'high').length,     fill: '#a6321f' },
+      { name: 'Medium',   value: dealers.filter(d => d.risk_level === 'medium').length,   fill: '#c98a1f' },
+      { name: 'Low',      value: dealers.filter(d => d.risk_level === 'low').length,       fill: '#2d6a4a' },
     ].filter(d => d.value > 0)
 
     return { companyArr, psrArr, byLocCo, locationKeys, riskPie }
@@ -199,7 +199,7 @@ export default function ReportsPage() {
 
   const tooltipStyle = {
     fontSize: 11, borderRadius: 8,
-    border: '1px solid #e2e8f0',
+    border: '1px solid #e3e1db',
     boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
   }
 
@@ -290,20 +290,20 @@ export default function ReportsPage() {
                   }))}
                   layout="vertical" barSize={13}
                 >
-                  <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }}
+                  <XAxis type="number" tick={{ fontSize: 10, fill: '#8b9199' }}
                     axisLine={false} tickLine={false}
                     tickFormatter={v =>
                       v >= 100000 ? '₹' + (v / 100000).toFixed(0) + 'L'
                       : v >= 1000  ? '₹' + (v / 1000).toFixed(0) + 'K' : '₹' + v
                     } />
                   <YAxis type="category" dataKey="name"
-                    tick={{ fontSize: 10, fill: '#64748b' }}
+                    tick={{ fontSize: 10, fill: '#5b6169' }}
                     width={90} axisLine={false} tickLine={false} />
                   <Tooltip
                     formatter={(v, n) => [fmtCurrency(v), n === 'outstanding' ? 'Unpaid Balance' : 'Overdue']}
                     contentStyle={tooltipStyle} />
-                  <Bar dataKey="outstanding" fill="#6366f1" radius={[0, 4, 4, 0]} />
-                  <Bar dataKey="overdue"     fill="#f87171" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="outstanding" fill="#1f4e5f" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="overdue"     fill="#a6321f" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )

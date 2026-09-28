@@ -1,246 +1,216 @@
 import { Link } from 'react-router-dom'
-import { useDashboard } from '../hooks/useDashboard'
+import { useLedger } from '../hooks/useLedger'
 import { useAuth } from '../hooks/useAuth'
-import { fmtCurrency, fmtDate, riskOf } from '../lib/utils'
-import { ArrowRight, AlertTriangle, RefreshCw } from 'lucide-react'
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts'
+import { fmtCurrency } from '../lib/utils'
+import { BUCKETS } from '../lib/ledger'
+import { initials } from './layout/Layout'
+import {
+  Card, Kpi, Bar, RiskBadge, PageHeader, PageLoading, PageError, EmptyState, TONE, pct, daysLabel,
+} from './ui'
 
-/* Data now arrives pre-aggregated from fn_dashboard() — one RPC,
-   ~4.5 KB, instead of 2,507 invoice rows at 2.6 MB. */
+export const BUCKET_TONE = { current: 'good', d30: 'warn', d60: 'warn', d90: 'bad', d90p: 'bad' }
 
-function KPI({ label, value, sub, color }) {
-  const C = {
-    indigo: { bar: '#6366f1', text: '#4338ca' },
-    red:    { bar: '#ef4444', text: '#b91c1c' },
-    amber:  { bar: '#f59e0b', text: '#b45309' },
-    pink:   { bar: '#ec4899', text: '#be185d' },
-    green:  { bar: '#10b981', text: '#065f46' },
-    slate:  { bar: '#64748b', text: '#334155' },
-  }[color] ?? { bar: '#64748b', text: '#334155' }
-  return (
-    <div className="card p-4 flex flex-col gap-2">
-      <div className="self-start h-0.5 w-8 rounded-full" style={{ background: C.bar }} />
-      <p className="text-xl font-bold leading-none" style={{ color: C.text }}>{value}</p>
-      <div>
-        <p className="text-[11px] font-semibold text-slate-500">{label}</p>
-        {sub && <p className="text-[10px] text-slate-400 mt-0.5">{sub}</p>}
-      </div>
-    </div>
-  )
+export const HEALTH_LABEL = {
+  duplicates:     { label: 'Same invoice entered twice',     tone: 'bad' },
+  overpaid:       { label: 'Dealer paid more than the bill', tone: 'bad' },
+  invalidDates:   { label: 'Invalid dates',                  tone: 'warn' },
+  missingPayDate: { label: 'Payment with no date',           tone: 'warn' },
 }
 
-function SectionHead({ title, linkTo, linkLabel, right }) {
-  return (
-    <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
-      <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{title}</h2>
-      {right}
-      {linkTo && (
-        <Link to={linkTo}
-          className="text-[11px] text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1">
-          {linkLabel} <ArrowRight size={11} />
-        </Link>
-      )}
-    </div>
-  )
+function todayHeading() {
+  const d = new Date()
+  return `${d.toLocaleDateString('en-IN', { weekday: 'long' })}, ${d.getDate()} ${d.toLocaleDateString('en-IN', { month: 'long' })}`
+}
+
+function DelayCell({ d }) {
+  if (d.maxLate > 0) return <span className="text-[12.5px] font-semibold text-bad text-right">{d.maxLate}</span>
+  return <span className="text-[12.5px] font-semibold text-warn text-right">{daysLabel(0, d.dueToday > 0)}</span>
 }
 
 export default function Dashboard() {
   const { profile, isAdmin } = useAuth()
-  const {
-    kpi, byCompany, byLocation, overdueTop, watchlistTop,
-    watchlistCount, loading, error, refetch,
-  } = useDashboard()
+  const { analysis, health, loading, error, refetch } = useLedger()
 
-  if (loading && !kpi.invoice_count) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-7 h-7 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
-  }
+  if (loading) return <PageLoading label="Adding up what is owed…" />
+  if (error)   return <PageError message={error} onRetry={refetch} />
 
-  if (error) {
-    return (
-      <div className="p-5">
-        <div className="card p-5 border-red-200">
-          <p className="text-sm font-semibold text-red-700">Could not load dashboard</p>
-          <p className="text-xs text-slate-500 mt-1">{error}</p>
-          <button onClick={refetch} className="btn-secondary mt-3">
-            <RefreshCw size={12} /> Retry
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  const chartData = byCompany.map(d => ({
-    name: d.name?.length > 11 ? d.name.slice(0, 11) + '…' : d.name,
-    outstanding: Number(d.outstanding ?? 0),
-    overdue:     Number(d.overdue ?? 0),
-  }))
+  const { kpi, buckets, collections, lateDealers } = analysis
+  const lateCount = lateDealers.length
+  const top = collections.slice(0, 5)
+  const atStakeAll = collections.reduce((s, d) => s + d.atStake, 0)
+  const topShare = atStakeAll > 0 ? top.reduce((s, d) => s + d.atStake, 0) / atStakeAll : 0
+  const maxBucket = Math.max(1, ...BUCKETS.map(b => buckets[b.key].amount))
+  const issues = Object.values(health).filter(h => h?.key && h.count > 0).sort((a, b) => b.count - a.count).slice(0, 3)
+  const dueNames = kpi.dueTodayDealers
 
   return (
-    <div className="p-5 space-y-5">
-
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-lg font-bold text-slate-800">Dashboard</h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            {isAdmin ? 'All locations' : profile?.locations?.name} ·{' '}
-            {new Date().toLocaleDateString('en-IN', {
-              weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-            })}
-            {' · '}{kpi.invoice_count ?? 0} invoices
-          </p>
-        </div>
-        <button onClick={refetch} className="btn-secondary" title="Refresh">
-          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
-        </button>
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
-        <KPI label="Outstanding" value={fmtCurrency(kpi.outstanding)}    sub="unpaid balance"   color="indigo" />
-        <KPI label="Overdue"     value={fmtCurrency(kpi.overdue_amount)} sub={`${kpi.overdue_count ?? 0} invoices`} color="red" />
-        <KPI label="Due Today"   value={kpi.due_today ?? 0}              sub="invoices due"     color="amber" />
-        <KPI label="Call Alerts" value={kpi.call_due ?? 0}               sub="due tomorrow"     color="pink" />
-        <KPI label="Collected"   value={fmtCurrency(kpi.collected)}      sub="payments received" color="green" />
-        <KPI label="Total PDC"   value={fmtCurrency(kpi.total_pdc)}      sub="post dated cheques" color="slate" />
-        <KPI label="Watchlist"   value={watchlistCount}                  sub="flagged dealers"  color="red" />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-        <div className="card lg:col-span-2 overflow-hidden">
-          <SectionHead title="Unpaid Outstanding by Company" />
-          <div className="p-4">
-            <ResponsiveContainer width="100%" height={190}>
-              <BarChart data={chartData} barSize={16} barGap={3}>
-                <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }}
-                  axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false}
-                  tickFormatter={v =>
-                    v >= 100000 ? '₹' + (v / 100000).toFixed(0) + 'L'
-                    : v >= 1000 ? '₹' + (v / 1000).toFixed(0) + 'K' : '₹' + v} />
-                <Tooltip
-                  formatter={(v, n) => [fmtCurrency(v), n === 'outstanding' ? 'Unpaid Balance' : 'Overdue']}
-                  contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }} />
-                <Bar dataKey="outstanding" fill="#6366f1" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="overdue"     fill="#f87171" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-            <div className="flex gap-4 mt-1">
-              <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
-                <span className="w-2 h-2 rounded-sm bg-indigo-500 inline-block" /> Unpaid Balance
-              </span>
-              <span className="flex items-center gap-1.5 text-[10px] text-slate-400">
-                <span className="w-2 h-2 rounded-sm bg-red-400 inline-block" /> Overdue
-              </span>
+    <>
+      {/* ── Phone ───────────────────────────────────────────── */}
+      <div className="md:hidden">
+        <div className="bg-brand px-[18px] pt-5 pb-[22px]">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[12.5px] text-brand-soft">{isAdmin ? 'All locations' : profile?.locations?.name}</div>
+              <div className="text-xl font-bold text-white tracking-[-0.02em]">{profile?.full_name}</div>
+            </div>
+            <div className="w-[38px] h-[38px] rounded-full bg-white text-brand text-sm font-bold flex items-center justify-center" aria-hidden="true">
+              {initials(profile?.full_name)}
             </div>
           </div>
-        </div>
-
-        <div className="card overflow-hidden">
-          <SectionHead title="Watchlist" linkTo="/watchlist" linkLabel="View all" />
-          <div className="divide-y divide-slate-50">
-            {watchlistTop.map(d => {
-              const rc = riskOf(d.risk_level)
-              return (
-                <div key={d.id}
-                  className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50 transition-colors">
-                  <div className="min-w-0 mr-2">
-                    <p className="text-xs font-semibold text-slate-700 truncate">{d.name}</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      {d.town} · {d.overdue_count} overdue · score {d.risk_score}
-                    </p>
-                  </div>
-                  <span className={`badge shrink-0 ${rc.cls}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${rc.dot}`} />
-                    {rc.label}
-                  </span>
-                </div>
-              )
-            })}
-            {watchlistTop.length === 0 && (
-              <p className="text-xs text-slate-400 text-center py-8">No watchlist entries</p>
-            )}
+          <div className="bg-white/10 rounded-[11px] px-4 py-[15px] mt-[18px]">
+            <div className="text-xs font-semibold text-brand-soft">{isAdmin ? 'Overdue' : 'Location Overdue'}</div>
+            <div className="font-mono text-[25px] font-semibold text-white mt-1.5">{fmtCurrency(kpi.overdue)}</div>
+            <div className="text-[12.5px] text-brand-soft mt-1">{lateCount} dealers · {kpi.overdueCount} invoices past due</div>
           </div>
+        </div>
+        <div className="px-4 py-[18px] flex flex-col gap-3">
+          <h2 className="m-0 text-[15px] font-bold text-ink">Priority Collections</h2>
+          {collections.length === 0 && (
+            <Card><EmptyState title="Nothing is late today" body="Every dealer is inside their credit period." /></Card>
+          )}
+          {collections.slice(0, 3).map(d => (
+            <Card key={d.id} className="p-4">
+              <div className="flex items-start justify-between gap-2.5">
+                <div className="min-w-0">
+                  <div className="text-[15px] font-bold text-ink truncate">{d.name}</div>
+                  <div className="text-xs text-faint mt-0.5">{d.town}</div>
+                </div>
+                <RiskBadge level={d.risk_level} />
+              </div>
+              <div className="flex items-baseline gap-2.5 mt-3">
+                <span className="font-mono text-[21px] font-semibold text-ink">{fmtCurrency(d.atStake)}</span>
+                <span className={`text-[12.5px] font-semibold ${d.maxLate > 0 ? 'text-bad' : 'text-warn'}`}>
+                  {d.maxLate > 0 ? `${d.maxLate} days late` : 'due today'}
+                </span>
+              </div>
+              <div className="flex gap-2.5 mt-3.5">
+                {d.mobile
+                  ? <a href={`tel:${d.mobile.replace(/[^\d+]/g, '')}`} className="flex-1 min-h-[46px] flex items-center justify-center text-sm font-semibold text-white bg-brand rounded-[10px] hover:text-white">Call</a>
+                  : <span className="flex-1 min-h-[46px] flex items-center justify-center text-sm text-faint bg-surface rounded-[10px]">No number</span>}
+                <Link to={`/dealers/${d.id}`} className="flex-1 min-h-[46px] flex items-center justify-center text-sm font-semibold text-muted bg-white border border-line-input rounded-[10px]">Details</Link>
+              </div>
+            </Card>
+          ))}
+          {collections.length > 3 && (
+            <Link to="/collections" className="bg-white border border-dashed border-line-input rounded-xl p-[18px] text-center text-[13px] text-faint">
+              {collections.length - 3} more dealers behind on payment ›
+            </Link>
+          )}
         </div>
       </div>
 
-      {byLocation.length > 0 && (
-        <div className="card overflow-hidden">
-          <SectionHead title="Location-wise Summary" />
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr>
-                  {['Location','Invoices','Unpaid Outstanding','Overdue','Collected','Call Alerts'].map(h => (
-                    <th key={h} className="th">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {byLocation.map(d => (
-                  <tr key={d.name}>
-                    <td className="td font-bold text-indigo-600">{d.name}</td>
-                    <td className="td text-center text-slate-600">{d.invoices}</td>
-                    <td className="td text-right font-bold text-slate-800">{fmtCurrency(d.outstanding)}</td>
-                    <td className="td text-right">
-                      <span className={Number(d.overdue) > 0 ? 'font-bold text-red-600' : 'text-slate-300'}>
-                        {fmtCurrency(d.overdue)}
-                      </span>
-                    </td>
-                    <td className="td text-right font-semibold text-emerald-600">{fmtCurrency(d.collected)}</td>
-                    <td className="td text-center">
-                      {Number(d.call_alerts) > 0
-                        ? <span className="badge badge-pink">{d.call_alerts} calls</span>
-                        : <span className="text-slate-300 text-[10px]">—</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {/* ── Desktop ─────────────────────────────────────────── */}
+      <div className="hidden md:flex page gap-5">
+        <PageHeader
+          title={todayHeading()}
+          sub={lateCount > 0
+            ? `${lateCount} dealer${lateCount === 1 ? ' owes' : 's owe'} you money past its due date. That is the only number that needs you today.`
+            : 'Nobody is past their due date. Nothing needs chasing today.'}
+          action={<Link to="/collections" className="btn-primary min-h-[44px] px-5 text-sm">Open Collections ({collections.length})</Link>}
+        />
 
-      {overdueTop.length > 0 && (
-        <div className="card overflow-hidden">
-          <SectionHead title="Largest Overdue Invoices" linkTo="/invoices" linkLabel="All invoices" />
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr>
-                  {['Invoice No','Stockist','Town','PSR','Unpaid Balance','Due Date','Overdue By'].map(h => (
-                    <th key={h} className="th">{h}</th>
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3.5">
+          <Kpi label="Total Outstanding" value={fmtCurrency(kpi.outstanding)} sub={`across ${kpi.openCount} open invoices`} />
+          <Kpi label="Overdue" value={fmtCurrency(kpi.overdue)} tone="bad"
+            sub={`${pct(kpi.outstanding ? kpi.overdue / kpi.outstanding : 0)} of everything owed`} />
+          <Kpi label="Due Today" value={fmtCurrency(kpi.dueToday)} tone={dueNames.length ? 'warn' : 'neutral'}
+            sub={dueNames.length
+              ? `${dueNames.length} dealer${dueNames.length === 1 ? '' : 's'} · ${dueNames[0]}${dueNames.length > 1 ? ' and others' : ''}`
+              : 'nothing falls due today'} />
+          <Kpi label="Collected This Week" value={fmtCurrency(kpi.collectedWeek)} tone="good"
+            sub={`across ${kpi.paymentsWeek} payment${kpi.paymentsWeek === 1 ? '' : 's'}`} />
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-[1.55fr_1fr] gap-[18px]">
+          <Card className="px-6 py-[22px] flex flex-col min-w-0">
+            <div className="flex items-start justify-between gap-4 mb-1">
+              <div>
+                <h2 className="h2">Priority Collections</h2>
+                <p className="h2-sub">
+                  {top.length
+                    ? `They hold ${pct(topShare)} of all the late money.${topShare >= 0.5 && top.length === 5 ? ' Five calls, most of the problem.' : ''}`
+                    : 'Nobody is late right now.'}
+                </p>
+              </div>
+              <Link to="/collections" className="link-more">See all {collections.length} ›</Link>
+            </div>
+
+            {top.length === 0
+              ? <EmptyState title="Nothing is late today" body="Every dealer is inside their credit period." linkTo="/ageing" linkLabel="Look at what is coming up" />
+              : (
+                <div role="table" aria-label="Priority collections">
+                  <div role="row" className="grid grid-cols-[2.2fr_1.2fr_1fr_0.7fr_96px] gap-3.5 pt-3.5 pb-2 border-b border-line mt-3">
+                    <span role="columnheader" className="col-head">Stockist</span>
+                    <span role="columnheader" className="col-head">PSR</span>
+                    <span role="columnheader" className="col-head text-right">Balance</span>
+                    <span role="columnheader" className="col-head text-right">Delay</span>
+                    <span role="columnheader" className="col-head">Risk</span>
+                  </div>
+                  {top.map(d => (
+                    <Link role="row" key={d.id} to={`/dealers/${d.id}`}
+                      className="grid grid-cols-[2.2fr_1.2fr_1fr_0.7fr_96px] gap-3.5 py-3.5 border-b border-line-soft items-center hover:bg-surface -mx-2 px-2 rounded">
+                      <div role="cell" className="min-w-0">
+                        <div className="text-[13.5px] font-semibold text-ink truncate">{d.name}</div>
+                        <div className="text-[11.5px] text-faint mt-0.5">{d.town}</div>
+                      </div>
+                      <span role="cell" className="text-[12.5px] text-muted truncate">{d.psr ?? '—'}</span>
+                      <span role="cell" className="font-mono text-sm font-semibold text-ink text-right">{fmtCurrency(d.atStake)}</span>
+                      <span role="cell" className="text-right"><DelayCell d={d} /></span>
+                      <span role="cell"><RiskBadge level={d.risk_level} /></span>
+                    </Link>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {overdueTop.map(inv => (
-                  <tr key={inv.id}>
-                    <td className="td font-mono text-[10px] font-bold text-indigo-700">{inv.invoice_number}</td>
-                    <td className="td">
-                      <span className="font-semibold text-slate-700 text-xs">{inv.stockist_name}</span>
-                      {inv.watchlist && (
-                        <span className="ml-1.5 badge badge-red">
-                          <AlertTriangle size={9} /> watchlist
-                        </span>
-                      )}
-                    </td>
-                    <td className="td text-slate-400">{inv.town}</td>
-                    <td className="td text-slate-400">{inv.psr_name ?? '—'}</td>
-                    <td className="td text-right font-bold text-red-600">{fmtCurrency(inv.balance)}</td>
-                    <td className="td text-slate-400">{fmtDate(inv.due_date)}</td>
-                    <td className="td"><span className="badge badge-red">{inv.delay_days}d late</span></td>
-                  </tr>
+                </div>
+              )}
+            <p className="mt-3.5 text-xs text-faint leading-relaxed">
+              &ldquo;Risk&rdquo; comes from how often this dealer has paid late before, and by how much. Click any row to open their full history.
+            </p>
+          </Card>
+
+          <div className="flex flex-col gap-[18px] min-w-0">
+            <Card className="px-6 py-[22px]">
+              <div className="flex items-baseline justify-between">
+                <h2 className="h2">Ageing Analysis</h2>
+                <Link to="/ageing" className="link-more">Break it down ›</Link>
+              </div>
+              <div className="flex flex-col gap-[13px] mt-4">
+                {BUCKETS.map(b => (
+                  <div key={b.key}>
+                    <div className="flex justify-between items-baseline mb-1.5">
+                      <span className="text-[12.5px] text-ink">{b.label}</span>
+                      <span className="font-mono text-[13px] font-semibold text-ink">{fmtCurrency(buckets[b.key].amount)}</span>
+                    </div>
+                    <Bar pct={buckets[b.key].amount / maxBucket} tone={BUCKET_TONE[b.key]} />
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </Card>
+
+            <Card className="px-6 py-[22px] flex-1">
+              <div className="flex items-baseline justify-between">
+                <h2 className="h2">Data Health</h2>
+                <Link to="/data-health" className="link-more">Open fix list ›</Link>
+              </div>
+              <p className="h2-sub mb-4">Entries that are making your numbers wrong.</p>
+              {issues.length === 0
+                ? <p className="text-[12.5px] text-good">No problems found. Your totals are clean.</p>
+                : (
+                  <div className="flex flex-col gap-[11px]">
+                    {issues.map(h => {
+                      const m = HEALTH_LABEL[h.key]
+                      return (
+                        <Link key={h.key} to={`/data-health#${h.key}`}
+                          className={`flex items-center justify-between px-3.5 py-3 border rounded-[9px] ${TONE[m.tone].box}`}>
+                          <span className={`text-[12.5px] ${TONE[m.tone].ink}`}>{m.label}</span>
+                          <span className={`font-mono text-[13px] font-semibold ${TONE[m.tone].text}`}>{h.count}</span>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                )}
+            </Card>
           </div>
         </div>
-      )}
-    </div>
+      </div>
+    </>
   )
 }
