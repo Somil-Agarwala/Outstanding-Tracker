@@ -30,7 +30,7 @@ export default function LoginPage() {
         <div className="mb-7">
           <div className="flex items-baseline gap-2">
             <h1 className="m-0 text-[26px] font-bold text-ink tracking-[-0.02em]">PayTrack</h1>
-            <span className="text-xs text-faint">Agarwal Distribution</span>
+            <span className="text-xs text-faint">S.S. Commercial</span>
           </div>
           <p className="mt-1 text-sm text-muted">Outstanding Payments Manager</p>
         </div>

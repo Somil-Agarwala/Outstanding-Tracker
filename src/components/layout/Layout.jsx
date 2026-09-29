@@ -44,6 +44,7 @@ export default function Layout() {
   const firstName = profile?.full_name?.split(/\s+/)[0] ?? ''
   const scope = isAdmin ? 'sees all locations' : profile?.locations?.name ?? ''
   const tabPaths = TABS.map(t => t.to)
+  const wide = location.pathname.startsWith('/invoices')
   const moreActive = !TABS.some(t => (t.end ? location.pathname === t.to : location.pathname.startsWith(t.to)))
 
   return (
@@ -52,7 +53,7 @@ export default function Layout() {
         <div className="flex items-center gap-4 md:gap-7 h-14 md:h-[62px] px-4 md:px-8">
           <NavLink to="/" className="flex items-baseline gap-2 shrink-0 no-underline">
             <span className="text-[19px] font-bold text-ink tracking-[-0.02em]">PayTrack</span>
-            <span className="hidden lg:inline text-[11px] text-faint">Agarwal Distribution</span>
+            <span className="hidden lg:inline text-[11px] text-faint">S.S. Commercial</span>
           </NavLink>
 
           <nav aria-label="Main" className="hidden md:flex gap-[3px] flex-1 min-w-0 overflow-x-auto">
@@ -68,7 +69,7 @@ export default function Layout() {
           </nav>
 
           <div className="ml-auto flex items-center gap-2.5 shrink-0">
-            <span className="hidden xl:inline text-xs text-muted">{firstName}{scope && ` · ${scope}`}</span>
+            <span className="hidden 2xl:inline text-xs text-muted">{firstName}{scope && ` · ${scope}`}</span>
             <div className="hidden md:flex w-[31px] h-[31px] rounded-full bg-brand text-white text-xs font-semibold items-center justify-center"
               title={profile?.full_name ?? ''} aria-hidden="true">
               {initials(profile?.full_name)}
@@ -82,8 +83,8 @@ export default function Layout() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-auto pb-[76px] md:pb-0">
-        <div className="animate-fadein max-w-[1600px] mx-auto">
+      <main className="flex-1 min-h-0 overflow-auto pb-[76px] md:pb-0">
+        <div className={`animate-fadein ${wide ? 'md:h-full' : 'max-w-[1600px] mx-auto'}`}>
           <Outlet />
         </div>
       </main>
