@@ -293,7 +293,7 @@ export default function InvoicesPage() {
   const [company,   setCompany]   = useState('')
   const [psr,       setPsr]       = useState('')
   const [location,  setLocation]  = useState('')
-  const [pageSize,  setPageSize]  = useState(50)
+  const [pageSize,  setPageSize]  = useState(100)
   const [page,      setPage]      = useState(1)
   const [sort,      setSort]      = useState({ key: 'priority', dir: 1 })
   const [full,      setFull]      = useState(false)
@@ -352,7 +352,7 @@ export default function InvoicesPage() {
   }
 
   return (
-    <div className="flex flex-col gap-3 px-4 py-4 md:px-6 md:py-5 md:h-full">
+    <div className="flex flex-col gap-3 px-4 py-4 md:px-6 md:py-5">
 
       {/* ── Title + actions ─────────────────────────────────── */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between shrink-0">
@@ -448,11 +448,11 @@ export default function InvoicesPage() {
       </Card>
 
       {/* ── Table ───────────────────────────────────────────── */}
-      <Card className="overflow-hidden flex flex-col md:flex-1 md:min-h-0">
+      <Card className="flex flex-col">
         {error ? (
           <ErrorState message={error} onRetry={refetch} />
         ) : (
-          <div className={`md:flex-1 md:min-h-0 md:overflow-auto ${full ? 'overflow-auto max-h-[70vh] md:max-h-none' : ''}`}>
+          <div className={full ? 'overflow-x-auto rounded-t-xl' : 'overflow-x-auto xl:overflow-visible'}>
             {loading ? (
               <div className="px-6"><LoadingRows /></div>
             ) : list.length === 0 ? (
@@ -482,7 +482,7 @@ export default function InvoicesPage() {
               </div>
               <table className="hidden md:table w-full min-w-[1080px] table-fixed border-collapse">
                 <colgroup>{COMPACT_COLS.map(c => <col key={c.key} style={{ width: c.w }} />)}</colgroup>
-                <thead className="sticky top-0 z-10 bg-surface">
+                <thead className="xl:sticky xl:top-0 z-10 bg-surface shadow-[0_1px_0_#e3e1db]">
                   <tr className="border-b border-line">
                     {COMPACT_COLS.map((c, i) => {
                       const active = sort.key === c.sort

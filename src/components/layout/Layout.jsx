@@ -84,7 +84,7 @@ export default function Layout() {
       </header>
 
       <main className="flex-1 min-h-0 overflow-auto pb-[76px] md:pb-0">
-        <div className={`animate-fadein ${wide ? 'md:h-full' : 'max-w-[1600px] mx-auto'}`}>
+        <div className={`animate-fadein ${wide ? '' : 'max-w-[1600px] mx-auto'}`}>
           <Outlet />
         </div>
       </main>

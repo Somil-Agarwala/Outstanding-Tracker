@@ -16,9 +16,9 @@ const COLUMNS = [
   'risk_level', 'risk_score', 'watchlist',
 ].join(',')
 
-/* One shared, cached read of every invoice the user may see. The
-   invoice_details view does not apply RLS, so location managers are
-   scoped here the same way useInvoices does it. */
+/* One shared, cached read of every invoice the user may see. RLS already
+   limits invoice_details (a security_invoker view) to the user's location;
+   the explicit filter keeps the cache key and query plan per location. */
 export function useLedger({ ttl = 120_000 } = {}) {
   const { profile, isAdmin } = useAuth()
   const [rows,    setRows]    = useState(null)
