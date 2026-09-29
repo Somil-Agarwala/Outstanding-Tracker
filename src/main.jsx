@@ -50,6 +50,10 @@ function ConfigError() {
           copied from <code className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded">.env.example</code>,
           or in your hosting provider's project settings), then redeploy.
         </p>
+        <p className="mt-3 text-xs text-gray-500">
+          This version was built {new Date(__BUILD_TIME__).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}.
+          Variables saved after that time only take effect in a new deployment.
+        </p>
       </div>
     </div>
   )
