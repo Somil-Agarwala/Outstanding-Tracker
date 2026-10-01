@@ -20,15 +20,18 @@ const STATUS_ORDER = { overdue: 0, due_today: 1, call_due: 2, partial: 3, upcomi
 const STRIPE = { overdue: '#a6321f', due_today: '#8f5a0c', call_due: '#8f5a0c', partial: '#c98a1f', upcoming: '#e3e1db', paid: '#2d6a4a' }
 const ROW_BG = { overdue: '#fdf6f4', due_today: '#fffdf5', call_due: '#fffdf5' }
 
+const fmtN = n => Number(n || 0).toLocaleString('en-IN')
+
+/* "All invoices" leads the strip so it is never scrolled out of sight. */
 const TABS = [
+  { key: 'all',       label: 'All invoices', test: () => true,                           tone: 'neutral', summary: n => `${fmtN(n)} total` },
   { key: 'all_due',   label: 'Unpaid',       test: r => r.owed > 0,                     tone: 'brand' },
   { key: 'overdue',   label: 'Overdue',      test: r => r.call_status === 'overdue',     tone: 'bad' },
   { key: 'due_today', label: 'Due Today',    test: r => r.call_status === 'due_today',   tone: 'warn' },
   { key: 'call_due',  label: 'Due Tomorrow', test: r => r.call_status === 'call_due',    tone: 'warn' },
   { key: 'partial',   label: 'Part Paid',    test: r => Number(r.payment_received) > 0 && r.owed > 0, tone: 'warn' },
   { key: 'upcoming',  label: 'Upcoming',     test: r => r.call_status === 'upcoming',    tone: 'neutral' },
-  { key: 'paid',      label: 'Paid',         test: r => r.call_status === 'paid',        tone: 'good', noAmount: true },
-  { key: 'all',       label: 'All',          test: () => true,                           tone: 'neutral' },
+  { key: 'paid',      label: 'Paid',         test: r => r.call_status === 'paid',        tone: 'good', summary: n => `${fmtN(n)} settled` },
 ]
 
 function statusOf(r, today) {
@@ -40,16 +43,102 @@ function statusOf(r, today) {
   return 'upcoming'
 }
 
-const SORTS = {
-  priority: (a, b) => STATUS_ORDER[a.call_status] - STATUS_ORDER[b.call_status] || b.late - a.late || b.owed - a.owed,
-  invoice:  (a, b) => (dayNum(a.invoice_date) ?? 0) - (dayNum(b.invoice_date) ?? 0),
-  stockist: (a, b) => String(a.stockist_name).localeCompare(String(b.stockist_name)),
-  company:  (a, b) => String(a.company_name).localeCompare(String(b.company_name)),
-  due:      (a, b) => (a.dueNum ?? 0) - (b.dueNum ?? 0),
-  net:      (a, b) => Number(a.net_outstanding) - Number(b.net_outstanding),
-  paid:     (a, b) => Number(a.payment_received) - Number(b.payment_received),
-  balance:  (a, b) => a.owed - b.owed,
-  status:   (a, b) => STATUS_ORDER[a.call_status] - STATUS_ORDER[b.call_status] || b.late - a.late,
+/* ── Sorting ─────────────────────────────────────────────────────
+   Every way the list can be ordered. `kind` decides how values compare
+   and what the two directions are called; `dir` is the direction a field
+   starts in when first picked. Blank values always sink to the bottom,
+   whichever direction is chosen, so missing dates never jump to the top. */
+
+const num = v => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v))
+
+const SORT_FIELDS = [
+  { key: 'priority',              label: 'Most urgent first',     kind: 'priority' },
+  { key: 'invoice_date',          label: 'Invoice date',          kind: 'date',   dir: -1, get: r => dayNum(r.invoice_date) },
+  { key: 'invoice_number',        label: 'Invoice No',            kind: 'text',   dir: 1,  get: r => r.invoice_number },
+  { key: 'due_date',              label: 'Due date',              kind: 'date',   dir: 1,  get: r => r.dueNum },
+  { key: 'late',                  label: 'Days late',             kind: 'number', dir: -1, get: r => r.late },
+  { key: 'balance',               label: 'Balance',               kind: 'number', dir: -1, get: r => r.owed },
+  { key: 'net',                   label: 'Net outstanding',       kind: 'number', dir: -1, get: r => num(r.net_outstanding) },
+  { key: 'invoice_amount',        label: 'Invoice amount',        kind: 'number', dir: -1, get: r => num(r.invoice_amount) },
+  { key: 'cn_dn',                 label: 'CN/DN',                 kind: 'number', dir: -1, get: r => num(r.cn_dn_amount) },
+  { key: 'paid',                  label: 'Amount received',       kind: 'number', dir: -1, get: r => num(r.payment_received) },
+  { key: 'payment_date',          label: 'Payment date',          kind: 'date',   dir: -1, get: r => dayNum(r.payment_date) },
+  { key: 'invoice_received_date', label: 'Invoice received date', kind: 'date',   dir: -1, get: r => dayNum(r.invoice_received_date) },
+  { key: 'pdc_date',              label: 'PDC date',              kind: 'date',   dir: 1,  get: r => dayNum(r.pdc_date) },
+  { key: 'pdc',                   label: 'PDC amount',            kind: 'number', dir: -1, get: r => num(r.pdc_amount) },
+  { key: 'credit',                label: 'Credit days',           kind: 'number', dir: -1, get: r => num(r.credit_days) },
+  { key: 'stockist',              label: 'Stockist',              kind: 'text',   dir: 1,  get: r => r.stockist_name },
+  { key: 'company',               label: 'Company',               kind: 'text',   dir: 1,  get: r => r.company_name },
+  { key: 'psr',                   label: 'PSR',                   kind: 'text',   dir: 1,  get: r => r.psr_name },
+  { key: 'town',                  label: 'Town',                  kind: 'text',   dir: 1,  get: r => r.town },
+  { key: 'location',              label: 'Location',              kind: 'text',   dir: 1,  get: r => r.location_name },
+  { key: 'status',                label: 'Status',                kind: 'status', dir: 1,  get: r => STATUS_ORDER[r.call_status] },
+  { key: 'risk',                  label: 'Risk score',            kind: 'number', dir: -1, get: r => num(r.risk_score) },
+]
+const SORT_BY_KEY = Object.fromEntries(SORT_FIELDS.map(f => [f.key, f]))
+const DEFAULT_SORT = { key: 'priority', dir: 1 }
+
+const DIR_WORDS = {
+  date:   { [-1]: 'Newest first',  1: 'Oldest first' },
+  text:   { 1: 'A to Z',           [-1]: 'Z to A' },
+  number: { [-1]: 'Highest first', 1: 'Lowest first' },
+  status: { 1: 'Overdue first',    [-1]: 'Paid first' },
+}
+
+/* Natural order: CLK-9 sorts before CLK-10, and case is ignored. */
+const TEXT = new Intl.Collator('en-IN', { numeric: true, sensitivity: 'base' })
+
+const blank = v => v == null || v === '' || (typeof v === 'number' && Number.isNaN(v))
+
+/* Ties fall back to newest invoice first, then invoice number in natural
+   order, so equal rows never reshuffle between loads. */
+function tiebreak(a, b) {
+  return (dayNum(b.invoice_date) ?? -1e9) - (dayNum(a.invoice_date) ?? -1e9)
+    || TEXT.compare(String(a.invoice_number ?? ''), String(b.invoice_number ?? ''))
+    || String(a.id).localeCompare(String(b.id))
+}
+
+function comparator(sort) {
+  const f = SORT_BY_KEY[sort.key] ?? SORT_BY_KEY.priority
+  if (f.kind === 'priority') {
+    return (a, b) => STATUS_ORDER[a.call_status] - STATUS_ORDER[b.call_status]
+      || b.late - a.late || b.owed - a.owed || tiebreak(a, b)
+  }
+  return (a, b) => {
+    const x = f.get(a), y = f.get(b)
+    const xb = blank(x), yb = blank(y)
+    if (xb || yb) return xb && yb ? tiebreak(a, b) : xb ? 1 : -1
+    const c = f.kind === 'text' ? TEXT.compare(String(x), String(y)) : x - y
+    return sort.dir * c || tiebreak(a, b)
+  }
+}
+
+function sortLabel(sort) {
+  const f = SORT_BY_KEY[sort.key] ?? SORT_BY_KEY.priority
+  if (f.kind === 'priority') return f.label.toLowerCase()
+  const w = DIR_WORDS[f.kind][sort.dir]
+  return `${f.label}, ${f.kind === 'text' ? w : w.toLowerCase()}`
+}
+
+/* The chosen tab and sort are remembered on this device. Storage can be
+   unavailable (private browsing), so every access is guarded. */
+const PREFS_KEY = 'paytrack.invoices.view.v1'
+
+function loadPrefs() {
+  const fallback = { tab: 'all', sort: DEFAULT_SORT }
+  try {
+    const p = JSON.parse(window.localStorage.getItem(PREFS_KEY) || 'null')
+    if (!p) return fallback
+    const tab = TABS.some(t => t.key === p.tab) ? p.tab : fallback.tab
+    const okSort = p.sort && SORT_BY_KEY[p.sort.key] && (p.sort.dir === 1 || p.sort.dir === -1)
+    return { tab, sort: okSort ? { key: p.sort.key, dir: p.sort.dir } : DEFAULT_SORT }
+  } catch {
+    return fallback
+  }
+}
+
+function savePrefs(prefs) {
+  try { window.localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)) } catch { /* not remembered */ }
 }
 
 function useDebounced(value, ms = 200) {
@@ -158,15 +247,15 @@ const InvoiceCard = memo(function InvoiceCard({ r, today, onEdit }) {
 })
 
 const COMPACT_COLS = [
-  { key: 'invoice',  label: 'Invoice',    w: '11%',  sort: 'invoice' },
+  { key: 'invoice',  label: 'Invoice',    w: '11%',  sort: 'invoice_date' },
   { key: 'stockist', label: 'Stockist',   w: '17%',  sort: 'stockist' },
   { key: 'company',  label: 'Company',    w: '8%',   sort: 'company' },
-  { key: 'due',      label: 'Due',        w: '10%',  sort: 'due' },
+  { key: 'due',      label: 'Due',        w: '10%',  sort: 'due_date' },
   { key: 'net',      label: 'Net Amount', w: '9%',   sort: 'net', right: true },
   { key: 'paid',     label: 'Received',   w: '9%',   sort: 'paid', right: true },
   { key: 'balance',  label: 'Balance',    w: '10%',  sort: 'balance', right: true },
   { key: 'status',   label: 'Status',     w: '8%',   sort: 'status' },
-  { key: 'risk',     label: 'Risk',       w: '7%' },
+  { key: 'risk',     label: 'Risk',       w: '7%',   sort: 'risk' },
   { key: 'remarks',  label: 'Remarks',    w: '8%' },
   { key: 'edit',     label: '',           w: '3%' },
 ]
@@ -175,30 +264,30 @@ const COMPACT_COLS = [
 
 const STICK_2 = 140
 const FULL_COLS = [
-  { key: 'invoice_number',        label: 'Invoice No',      w: 140, align: 'l', stick: 1 },
-  { key: 'stockist_name',         label: 'Stockist',        w: 200, align: 'l', stick: 2 },
-  { key: 'invoice_date',          label: 'Date',            w: 95,  align: 'l', type: 'date' },
-  { key: 'payment_date',          label: 'Recd.Date',       w: 95,  align: 'l', type: 'date' },
-  { key: 'invoice_received_date', label: 'Inv.Received',    w: 105, align: 'l', type: 'date' },
-  { key: 'location_name',         label: 'Location',        w: 100, align: 'l' },
-  { key: 'company_name',          label: 'Company',         w: 105, align: 'l' },
-  { key: 'town',                  label: 'Town',            w: 120, align: 'l' },
-  { key: 'psr_name',              label: 'PSR',             w: 135, align: 'l' },
+  { key: 'invoice_number',        label: 'Invoice No',      w: 140, align: 'l', stick: 1, sort: 'invoice_number' },
+  { key: 'stockist_name',         label: 'Stockist',        w: 200, align: 'l', stick: 2, sort: 'stockist' },
+  { key: 'invoice_date',          label: 'Date',            w: 95,  align: 'l', type: 'date', sort: 'invoice_date' },
+  { key: 'payment_date',          label: 'Recd.Date',       w: 95,  align: 'l', type: 'date', sort: 'payment_date' },
+  { key: 'invoice_received_date', label: 'Inv.Received',    w: 105, align: 'l', type: 'date', sort: 'invoice_received_date' },
+  { key: 'location_name',         label: 'Location',        w: 100, align: 'l', sort: 'location' },
+  { key: 'company_name',          label: 'Company',         w: 105, align: 'l', sort: 'company' },
+  { key: 'town',                  label: 'Town',            w: 120, align: 'l', sort: 'town' },
+  { key: 'psr_name',              label: 'PSR',             w: 135, align: 'l', sort: 'psr' },
   { key: 'stockist_mobile',       label: 'Mobile',          w: 115, align: 'l', mono: true },
-  { key: 'invoice_amount',        label: 'Inv Amt',         w: 115, align: 'r', type: 'money' },
-  { key: 'cn_dn_amount',          label: 'CN/DN',           w: 95,  align: 'r', type: 'money' },
-  { key: 'net_outstanding',       label: 'Net Outstanding', w: 135, align: 'r', type: 'money' },
+  { key: 'invoice_amount',        label: 'Inv Amt',         w: 115, align: 'r', type: 'money', sort: 'invoice_amount' },
+  { key: 'cn_dn_amount',          label: 'CN/DN',           w: 95,  align: 'r', type: 'money', sort: 'cn_dn' },
+  { key: 'net_outstanding',       label: 'Net Outstanding', w: 135, align: 'r', type: 'money', sort: 'net' },
   { key: 'pdc_cheque_number',     label: 'PDC Cheque',      w: 110, align: 'l', mono: true },
-  { key: 'pdc_date',              label: 'PDC Date',        w: 95,  align: 'l', type: 'date' },
-  { key: 'pdc_amount',            label: 'PDC Amt',         w: 105, align: 'r', type: 'money' },
-  { key: 'credit_days',           label: 'Credit',          w: 70,  align: 'c' },
-  { key: 'due_date',              label: 'Due Date',        w: 95,  align: 'l', type: 'date' },
-  { key: 'late',                  label: 'Delay',           w: 70,  align: 'c', type: 'delay' },
-  { key: 'payment_received',      label: 'Paid Amt',        w: 115, align: 'r', type: 'money' },
-  { key: 'payment_date_2',        label: 'Paid Date',       w: 95,  align: 'l', type: 'date', from: 'payment_date' },
-  { key: 'owed',                  label: 'Balance',         w: 125, align: 'r', type: 'balance' },
-  { key: 'call_status',           label: 'Status',          w: 100, align: 'l', type: 'status' },
-  { key: 'risk_level',            label: 'Risk',            w: 95,  align: 'l', type: 'risk' },
+  { key: 'pdc_date',              label: 'PDC Date',        w: 95,  align: 'l', type: 'date', sort: 'pdc_date' },
+  { key: 'pdc_amount',            label: 'PDC Amt',         w: 105, align: 'r', type: 'money', sort: 'pdc' },
+  { key: 'credit_days',           label: 'Credit',          w: 70,  align: 'c', sort: 'credit' },
+  { key: 'due_date',              label: 'Due Date',        w: 95,  align: 'l', type: 'date', sort: 'due_date' },
+  { key: 'late',                  label: 'Delay',           w: 70,  align: 'c', type: 'delay', sort: 'late' },
+  { key: 'payment_received',      label: 'Paid Amt',        w: 115, align: 'r', type: 'money', sort: 'paid' },
+  { key: 'payment_date_2',        label: 'Paid Date',       w: 95,  align: 'l', type: 'date', from: 'payment_date', sort: 'payment_date' },
+  { key: 'owed',                  label: 'Balance',         w: 125, align: 'r', type: 'balance', sort: 'balance' },
+  { key: 'call_status',           label: 'Status',          w: 100, align: 'l', type: 'status', sort: 'status' },
+  { key: 'risk_level',            label: 'Risk',            w: 95,  align: 'l', type: 'risk', sort: 'risk' },
   { key: 'calling_remarks_1',     label: 'Remarks 1',       w: 150, align: 'l' },
   { key: '__edit',                label: 'Edit',            w: 60,  align: 'c', type: 'edit' },
 ]
@@ -289,13 +378,14 @@ export default function InvoicesPage() {
   const { analysis, loading, error, refetch } = useLedger()
 
   const [searchRaw, setSearchRaw] = useState('')
-  const [tab,       setTab]       = useState('all_due')
+  const [prefs]                   = useState(loadPrefs)
+  const [tab,       setTab]       = useState(prefs.tab)
   const [company,   setCompany]   = useState('')
   const [psr,       setPsr]       = useState('')
   const [location,  setLocation]  = useState('')
   const [pageSize,  setPageSize]  = useState(100)
   const [page,      setPage]      = useState(1)
-  const [sort,      setSort]      = useState({ key: 'priority', dir: 1 })
+  const [sort,      setSort]      = useState(prefs.sort)
   const [full,      setFull]      = useState(false)
   const [modal,     setModal]     = useState(null)
   const [toast,     setToast]     = useState('')
@@ -304,6 +394,7 @@ export default function InvoicesPage() {
   const today = todayNum()
 
   useEffect(() => { setPage(1) }, [search, tab, company, psr, location, pageSize, sort])
+  useEffect(() => { savePrefs({ tab, sort }) }, [tab, sort])
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(''), 4000)
@@ -330,9 +421,8 @@ export default function InvoicesPage() {
   }), [base])
 
   const list = useMemo(() => {
-    const t = TABS.find(x => x.key === tab)
-    const cmp = SORTS[sort.key]
-    return base.filter(t.test).sort((a, b) => sort.dir * cmp(a, b) || String(a.invoice_number).localeCompare(String(b.invoice_number)))
+    const t = TABS.find(x => x.key === tab) ?? TABS[0]
+    return base.filter(t.test).sort(comparator(sort))
   }, [base, tab, sort])
 
   const handleEdit = useCallback(inv => setModal(inv), [])
@@ -347,8 +437,15 @@ export default function InvoicesPage() {
   const collected = list.reduce((s, r) => s + (Number(r.payment_received) || 0), 0)
   const sel = on => `input w-auto px-2.5 text-[12.5px] ${on ? 'border-brand' : ''}`
 
+  const sortField = SORT_BY_KEY[sort.key] ?? SORT_BY_KEY.priority
+  const tabMeta = TABS.find(t => t.key === tab) ?? TABS[0]
+
+  /* Column header: same column flips the direction, a new one starts in its natural direction. */
   function toggleSort(key) {
-    setSort(s => (s.key === key ? { key, dir: -s.dir } : { key, dir: key === 'stockist' || key === 'company' ? 1 : -1 }))
+    setSort(s => (s.key === key ? { key, dir: -s.dir } : { key, dir: SORT_BY_KEY[key]?.dir ?? 1 }))
+  }
+  function pickSort(key) {
+    setSort(s => (s.key === key ? s : { key, dir: SORT_BY_KEY[key]?.dir ?? 1 }))
   }
 
   return (
@@ -359,7 +456,14 @@ export default function InvoicesPage() {
         <div>
           <h1 className="page-title">Invoices</h1>
           <p className="text-[13px] text-muted mt-0.5">
-            {loading ? 'Loading…' : `${list.length.toLocaleString('en-IN')} ${TABS.find(t => t.key === tab).label.toLowerCase()} invoice${list.length === 1 ? '' : 's'}${anyFilter ? ' matching your filters' : ''} · most urgent first unless you sort`}
+            {loading ? 'Loading…' : (
+              <>
+                {tab === 'all' && !anyFilter
+                  ? `All ${fmtN(all.length)} invoices`
+                  : `${fmtN(list.length)} ${tab === 'all' ? '' : `${tabMeta.label.toLowerCase()} `}invoice${list.length === 1 ? '' : 's'}${anyFilter ? ' matching your filters' : ''} · ${fmtN(all.length)} in total`}
+                {` · sorted by ${sortLabel(sort)}`}
+              </>
+            )}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
@@ -400,7 +504,7 @@ export default function InvoicesPage() {
               </div>
               <div className={`font-mono text-[15px] font-semibold mt-0.5 tracking-[-0.02em] ${
                 on ? 'text-white' : t.n === 0 ? 'text-dim' : t.tone === 'bad' ? 'text-bad' : 'text-ink'}`}>
-                {t.noAmount ? `${t.n} settled` : fmtCurrency(t.amount)}
+                {t.summary ? t.summary(t.n) : fmtCurrency(t.amount)}
               </div>
             </button>
           )
@@ -414,6 +518,21 @@ export default function InvoicesPage() {
           <input value={searchRaw} onChange={e => setSearchRaw(e.target.value)} type="search"
             aria-label="Search invoices" placeholder="Search invoice, stockist or town…"
             className="input pl-8 text-[12.5px] sm:w-[260px]" />
+        </div>
+        <div className="flex items-center gap-1.5 w-full sm:w-auto">
+          <label htmlFor="inv-sort" className="text-[12.5px] font-semibold text-muted whitespace-nowrap">Sort by</label>
+          <select id="inv-sort" value={sort.key} onChange={e => pickSort(e.target.value)}
+            className={`${sel(sort.key !== 'priority')} flex-1 sm:flex-none`}>
+            {SORT_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+          </select>
+          {sortField.kind !== 'priority' && (
+            <select value={sort.dir} onChange={e => setSort(s => ({ ...s, dir: Number(e.target.value) }))}
+              aria-label="Sort direction" className={`${sel(false)} flex-1 sm:flex-none`}>
+              {[sortField.dir ?? 1, -(sortField.dir ?? 1)].map(d => (
+                <option key={d} value={d}>{DIR_WORDS[sortField.kind][d]}</option>
+              ))}
+            </select>
+          )}
         </div>
         <select value={company} onChange={e => setCompany(e.target.value)} aria-label="Company" className={sel(company)}>
           <option value="">All Companies</option>
@@ -463,15 +582,26 @@ export default function InvoicesPage() {
             ) : full ? (
               <div style={{ minWidth: FULL_W }}>
                 <div style={{ display: 'grid', gridTemplateColumns: FULL_GRID }} className="bg-surface border-b border-line sticky top-0 z-30">
-                  {FULL_COLS.map(c => (
-                    <div key={c.key} style={{
-                      padding: '11px 12px', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', ...alignStyle(c.align),
-                      ...(c.stick ? { position: 'sticky', left: c.stick === 1 ? 0 : STICK_2, background: '#faf9f5', zIndex: 40,
-                        boxShadow: c.stick === 2 ? '6px 0 8px -6px rgba(21,23,26,0.12)' : undefined } : {}),
-                    }} className="text-[10.5px] font-semibold uppercase tracking-[0.04em] text-faint">
-                      {c.label}
-                    </div>
-                  ))}
+                  {FULL_COLS.map(c => {
+                    const active = Boolean(c.sort) && sort.key === c.sort
+                    return (
+                      <div key={c.key}
+                        style={{
+                          padding: '11px 12px', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', ...alignStyle(c.align),
+                          ...(c.stick ? { position: 'sticky', left: c.stick === 1 ? 0 : STICK_2, background: '#faf9f5', zIndex: 40,
+                            boxShadow: c.stick === 2 ? '6px 0 8px -6px rgba(21,23,26,0.12)' : undefined } : {}),
+                        }} className="text-[10.5px] font-semibold uppercase tracking-[0.04em] text-faint">
+                        {c.sort ? (
+                          <button type="button" onClick={() => toggleSort(c.sort)} title={`Sort by ${SORT_BY_KEY[c.sort].label}`}
+                            aria-label={`Sort by ${SORT_BY_KEY[c.sort].label}${active ? `, currently ${DIR_WORDS[SORT_BY_KEY[c.sort].kind][sort.dir].toLowerCase()}` : ''}`}
+                            className={`inline-flex items-center gap-1 uppercase tracking-[0.04em] hover:text-ink ${active ? 'text-ink' : ''}`}>
+                            {c.label}
+                            {active && (sort.dir === 1 ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
+                          </button>
+                        ) : c.label}
+                      </div>
+                    )
+                  })}
                 </div>
                 {shown.map(inv => <FullRow key={inv.id} inv={inv} onEdit={handleEdit} />)}
               </div>
@@ -515,7 +645,7 @@ export default function InvoicesPage() {
           <p className="text-xs text-faint">
             {list.length ? `Showing ${from}–${to} of ${list.length.toLocaleString('en-IN')}` : 'No rows'}
             {sort.key !== 'priority' && (
-              <> · <button type="button" className="font-semibold text-brand" onClick={() => setSort({ key: 'priority', dir: 1 })}>back to most urgent first</button></>
+              <> · <button type="button" className="font-semibold text-brand" onClick={() => setSort(DEFAULT_SORT)}>back to most urgent first</button></>
             )}
             {full && ' · Invoice No and Stockist stay pinned while scrolling'}
           </p>
