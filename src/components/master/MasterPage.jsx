@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { Plus, X, Loader2, Pencil } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { invalidate } from '../../lib/cache'
 
 /* ── Stockist Modal (Add & Edit) ── */
 function StockistModal({ stockist, companies, allPsrs, locations, onSave, onClose }) {
@@ -167,6 +168,11 @@ export default function MasterPage() {
     </div>
   )
 
+  /* Invoice screens keep a short-lived copy of every invoice, including each
+     dealer's name, town, PSR and terms. Drop it after any master-data save so
+     the change shows straight away. A change in credit days is carried onto the
+     dealer's unpaid invoices by the trg_stockist_credit_days_sync database
+     trigger, which recalculates their due dates. */
   async function saveStockist(payload, id) {
     if (id) {
       const { error } = await supabase.from('stockists').update(payload).eq('id', id)
@@ -175,6 +181,7 @@ export default function MasterPage() {
     } else {
       await addStockist(payload)
     }
+    invalidate('ledger')
   }
 
   async function savePsr(payload, id) {
@@ -185,6 +192,7 @@ export default function MasterPage() {
     } else {
       await addPsr(payload)
     }
+    invalidate('ledger')
   }
 
   return (
