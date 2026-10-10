@@ -4,11 +4,15 @@ import * as XLSX from 'xlsx'
 import { Download } from 'lucide-react'
 import { useLedger } from '../../hooks/useLedger'
 import { fmtCurrency } from '../../lib/utils'
+import WhatsAppButton from '../WhatsAppButton'
 import {
   Card, RiskBadge, PageHeader, PageLoading, PageError, EmptyState, NoResults, Tel, Pager, daysLabel,
 } from '../ui'
 
 const PAGE = 20
+
+/* A stockist belongs to one company, so any of its invoices names it. */
+const waDealer = d => ({ name: d.name, mobile: d.mobile, company: d.invoices?.[0]?.company_name, invoices: d.invoices })
 const DAY = 86400000
 
 function contactText(c) {
@@ -130,6 +134,7 @@ export default function CollectionsPage() {
                       {d.mobile
                         ? <a href={`tel:${d.mobile.replace(/[^\d+]/g, '')}`} className="flex-1 min-h-[46px] flex items-center justify-center text-sm font-semibold text-white bg-brand rounded-[10px] hover:text-white">Call</a>
                         : <span className="flex-1 min-h-[46px] flex items-center justify-center text-sm text-faint bg-surface rounded-[10px]">No number</span>}
+                      <WhatsAppButton dealer={waDealer(d)} iconSize={14} className="flex-1 min-h-[46px] px-1 text-[13px] rounded-[10px]" />
                       <Link to={`/dealers/${d.id}`} className="flex-1 min-h-[46px] flex items-center justify-center text-sm font-semibold text-muted bg-white border border-line-input rounded-[10px]">Details</Link>
                     </div>
                   </div>
@@ -139,12 +144,13 @@ export default function CollectionsPage() {
 
             {/* desktop: table */}
             <div className="hidden md:block px-5 overflow-x-auto">
-              <table className="w-full min-w-[900px] border-collapse">
+              <table className="w-full min-w-[1000px] border-collapse">
                 <thead>
                   <tr className="border-b border-line text-left">
                     <th className="col-head py-3 pr-3.5">Stockist</th>
                     <th className="col-head py-3 pr-3.5">PSR</th>
                     <th className="col-head py-3 pr-3.5">Mobile</th>
+                    <th className="col-head py-3 pr-3.5">Remind</th>
                     <th className="col-head py-3 pr-3.5 text-right">Balance</th>
                     <th className="col-head py-3 pr-3.5 text-right">Delay</th>
                     <th className="col-head py-3 pr-3.5">Risk</th>
@@ -163,6 +169,9 @@ export default function CollectionsPage() {
                         </td>
                         <td className="py-3.5 pr-3.5 text-[12.5px] text-muted">{d.psr ?? '—'}</td>
                         <td className="py-3.5 pr-3.5"><Tel number={d.mobile} /></td>
+                        <td className="py-3.5 pr-3.5">
+                          <WhatsAppButton dealer={waDealer(d)} iconSize={13} className="min-h-[32px] px-2.5 text-xs rounded-lg" />
+                        </td>
                         <td className="py-3.5 pr-3.5 text-right font-mono text-sm font-semibold text-ink">{fmtCurrency(d.atStake)}</td>
                         <td className={`py-3.5 pr-3.5 text-right text-[12.5px] font-semibold ${d.maxLate > 0 ? 'text-bad' : 'text-warn'}`}>
                           {daysLabel(d.maxLate, d.dueToday > 0)}

@@ -9,6 +9,7 @@ import { fmtCurrency, fmtDate } from '../../lib/utils'
 import { dayNum, todayNum, riskBreakdown, severityWord, delayTrend } from '../../lib/ledger'
 import { saveInvoice } from '../../lib/invoiceWrites'
 import InvoiceModal from '../invoices/InvoiceModal'
+import WhatsAppButton from '../WhatsAppButton'
 import {
   Card, Kpi, Bar, Badge, riskMeta, PageLoading, PageError, EmptyState, AccessDenied, TONE,
 } from '../ui'
@@ -173,6 +174,10 @@ export default function DealerDetailPage() {
             <a href={`tel:${dealer.mobile.replace(/[^\d+]/g, '')}`} className="btn-primary min-h-[44px] px-5 text-sm">
               <Phone size={15} aria-hidden="true" /> Call Stockist
             </a>
+          )}
+          {owed > 0 && (
+            <WhatsAppButton label="WhatsApp Reminder" className="min-h-[44px] px-5 text-sm rounded-lg"
+              dealer={{ name: dealer.name, mobile: dealer.mobile, company: dealer.companies?.name, invoices }} />
           )}
           <button type="button" className="btn-secondary min-h-[44px]" onClick={toggleWatchlist} disabled={busy}>
             {dealer.watchlist ? 'Remove from Watchlist' : 'Add to Watchlist'}
