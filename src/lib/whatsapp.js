@@ -57,12 +57,12 @@ export function reminderMessage({ name, company, invoices = [] }, today = todayN
   const shown = list.slice(0, MAX_BILLS)
 
   const lines = shown.map(b => {
-    const when = b.late > 0 ? `${b.late} दिन ओवरड्यू`
-      : b.dueToday ? 'आज देय'
-      : b.due != null ? `देय तिथि ${ddmmyyyy(b.i.due_date)}`
-      : 'देय तिथि तय नहीं'
-    const dated = b.i.invoice_date ? ` (${ddmmyyyy(b.i.invoice_date)})` : ''
-    return `• बिल नं. ${b.i.invoice_number}${dated} – ${rupees(b.owed)} – ${when}`
+    /* Dealer-facing: dates and amounts only, no internal bill numbers. */
+    const due = b.dueToday ? 'देय तिथि आज'
+      : b.due != null ? `देय तिथि ${ddmmyyyy(b.i.due_date)}${b.late > 0 ? ` (${b.late} दिन ओवरड्यू)` : ''}`
+      : null
+    const dated = b.i.invoice_date ? `बिल दिनांक ${ddmmyyyy(b.i.invoice_date)}` : 'बिल'
+    return `• ${[dated, rupees(b.owed), due].filter(Boolean).join(' – ')}`
   })
   if (list.length > shown.length) lines.push(`• और ${list.length - shown.length} बिल`)
 
