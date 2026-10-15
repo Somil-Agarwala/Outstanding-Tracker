@@ -5,6 +5,7 @@ import { Plus, X, Loader2, Pencil } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { invalidate } from '../../lib/cache'
+import FinanceSection from './FinanceSection'
 
 /* ── Stockist Modal (Add & Edit) ── */
 function StockistModal({ stockist, companies, allPsrs, locations, onSave, onClose }) {
@@ -199,7 +200,7 @@ export default function MasterPage() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Master Data</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Manage stockists, PSRs, companies and locations</p>
+        <p className="text-sm text-gray-400 mt-0.5">Manage stockists, PSRs, companies, locations, margins and loans</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -316,6 +317,9 @@ export default function MasterPage() {
             {locations.map(l => <span key={l.id} className="badge badge-gray">{l.name}</span>)}
           </div>
         </div>
+
+        {/* ── Margins & Loans (Party P&L) ── */}
+        <FinanceSection companies={companies} />
       </div>
 
       {stockistModal !== null && (

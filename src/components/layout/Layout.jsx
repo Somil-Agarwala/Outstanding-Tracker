@@ -11,6 +11,7 @@ const NAV = [
   { to: '/dealers',     label: 'Dealers' },
   { to: '/data-health', label: 'Data Health' },
   { to: '/reports',     label: 'Reports' },
+  { to: '/profit',      label: 'Party P&L',   adminOnly: true },
   { to: '/master',      label: 'Master Data', adminOnly: true },
 ]
 

@@ -9,6 +9,7 @@ import { fmtCurrency, fmtDate } from '../../lib/utils'
 import { dayNum, todayNum, riskBreakdown, severityWord, delayTrend } from '../../lib/ledger'
 import { saveInvoice } from '../../lib/invoiceWrites'
 import InvoiceModal from '../invoices/InvoiceModal'
+import DealerPnlCard from '../profit/DealerPnlCard'
 import {
   Card, Kpi, Bar, Badge, riskMeta, PageLoading, PageError, EmptyState, AccessDenied, TONE,
 } from '../ui'
@@ -47,7 +48,7 @@ function trendSentence(trend) {
 
 export default function DealerDetailPage() {
   const { id } = useParams()
-  const { profile } = useAuth()
+  const { profile, isAdmin } = useAuth()
   const [dealer, setDealer]     = useState(null)
   const [invoices, setInvoices] = useState([])
   const [logs, setLogs]         = useState([])
@@ -300,6 +301,8 @@ export default function DealerDetailPage() {
         </Card>
 
         <div className="flex flex-col gap-[18px] min-w-0">
+          {isAdmin && <DealerPnlCard dealerId={dealer.id} invoices={invoices} />}
+
           <Card className="px-6 py-[22px]">
             <h2 className="h2">Risk Score Breakdown</h2>
             <p className="h2-sub mb-4">Four things decide their score of {dealer.risk_score ?? 0}. Here is where they stand on each.</p>

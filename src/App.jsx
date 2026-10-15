@@ -11,6 +11,7 @@ import DealerDetailPage from './components/dealers/DealerDetailPage'
 import DataHealthPage   from './components/health/DataHealthPage'
 import MasterPage       from './components/master/MasterPage'
 import ReportsPage      from './components/reports/ReportsPage'
+import ProfitPage       from './components/profit/ProfitPage'
 
 function Spinner() {
   return (
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="dealers/:id"  element={<DealerDetailPage />} />
         <Route path="data-health"  element={<DataHealthPage />} />
         <Route path="reports"      element={<ReportsPage />} />
+        <Route path="profit"       element={<ProfitPage />} />
         <Route path="master"       element={<MasterPage />} />
         <Route path="watchlist"    element={<Navigate to="/dealers?show=watch" replace />} />
       </Route>

@@ -38,6 +38,8 @@ export default function InvoiceModal({ invoice, onSave, onClose }) {
   const [form,   setForm]   = useState(EMPTY)
   const [busy,   setBusy]   = useState(false)
   const [errMsg, setErrMsg] = useState('')
+  const [correcting, setCorrecting] = useState(false)
+  const [newPay, setNewPay] = useState({ amount: '', date: todayISO() })
 
   useEffect(() => {
     if (invoice) {
@@ -82,8 +84,15 @@ export default function InvoiceModal({ invoice, onSave, onClose }) {
   const invAmt  = Number(form.invoice_amount)   || 0
   const cnDn    = Number(form.cn_dn_amount)     || 0
   const netOut  = invAmt + cnDn
-  const paid    = Number(form.payment_received) || 0
-  const balance = netOut - paid
+  /* Money already on an invoice is never retyped. A new part-payment is
+     entered on its own with its own date and added to the total, so the
+     payment log (payment_history) keeps every payment's real date. */
+  const prevPaid = Number(invoice?.payment_received ?? 0) || 0
+  const prevDate = invoice?.payment_date ?? ''
+  const addMode  = !!invoice && prevPaid > 0 && !correcting
+  const newAmt   = Number(newPay.amount) || 0
+  const paid     = addMode ? prevPaid + newAmt : Number(form.payment_received) || 0
+  const balance  = netOut - paid
   const dueDate = calcDueDate(form.invoice_date, form.credit_days)
 
   const [dupe, setDupe] = useState(null)
@@ -113,7 +122,21 @@ export default function InvoiceModal({ invoice, onSave, onClose }) {
       || dateProblem('Payment date', form.payment_date)
       || dateProblem('PDC date', form.pdc_date, { future: true })
     if (dateErr) { setErrMsg(dateErr); return }
-    if (paid > 0 && !form.payment_date) {
+
+    let payDate = form.payment_date || null
+    if (addMode) {
+      payDate = prevDate || null
+      if (newAmt < 0) { setErrMsg('A new payment cannot be negative. To fix an old entry, use "Correct the total".'); return }
+      if (newAmt > 0) {
+        if (!newPay.date) { setErrMsg('Enter the date this payment came in'); return }
+        const newErr = dateProblem('Payment date', newPay.date)
+        if (newErr) { setErrMsg(newErr); return }
+        if (prevDate && dayNum(newPay.date) < dayNum(prevDate)) {
+          setErrMsg(`This date is before the last payment (${fmtDate(prevDate)}). To fix an older entry, use "Correct the total".`); return
+        }
+        payDate = newPay.date
+      }
+    } else if (paid > 0 && !form.payment_date) {
       setErrMsg('Enter the payment date too, so we can tell whether it was paid on time'); return
     }
 
@@ -133,7 +156,7 @@ export default function InvoiceModal({ invoice, onSave, onClose }) {
         pdc_amount:            Number(form.pdc_amount) || 0,
         credit_days:           Number(form.credit_days) || 30,
         payment_received:      paid,
-        payment_date:          form.payment_date || null,
+        payment_date:          payDate,
         calling_remarks_1:     form.calling_remarks_1 || null,
         calling_remarks_2:     form.calling_remarks_2 || null,
       }, invoice?.id ?? null)
@@ -296,9 +319,61 @@ export default function InvoiceModal({ invoice, onSave, onClose }) {
 
           {/* ── Payment ── */}
           <section>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">
-              Payment Received
-            </p>
+            <div className="flex items-baseline justify-between gap-3 mb-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                {addMode ? 'Add a Payment' : 'Payment Received'}
+              </p>
+              {invoice && prevPaid > 0 && (
+                <button type="button" className="text-[11.5px] font-semibold text-brand hover:text-brand-dark"
+                  onClick={() => {
+                    setCorrecting(c => !c)
+                    setNewPay({ amount: '', date: todayISO() })
+                    set('payment_received', String(prevPaid)); set('payment_date', prevDate)
+                  }}>
+                  {correcting ? 'Add a new payment instead' : 'Correct the total instead'}
+                </button>
+              )}
+            </div>
+
+            {addMode ? (
+              <>
+                <p className="text-[12.5px] text-muted mb-3">
+                  Received so far: <span className="font-mono font-semibold text-ink">{fmtCurrency(prevPaid)}</span>
+                  {prevDate && <> · last payment on {fmtDate(prevDate)}</>}
+                </p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="label">New Payment (₹)</label>
+                    <input type="number" min="0" step="0.01" className="input"
+                      value={newPay.amount}
+                      onChange={e => setNewPay(p => ({ ...p, amount: e.target.value }))}
+                      placeholder="0.00" />
+                  </div>
+                  <div>
+                    <label className="label">Date of This Payment ★</label>
+                    <input type="date" className="input" value={newPay.date}
+                      onChange={e => setNewPay(p => ({ ...p, date: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="label">Balance After (₹)</label>
+                    <input readOnly
+                      className={`input cursor-default font-bold ${
+                        balance > 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'
+                      }`}
+                      value={fmtCurrency(balance)} />
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-2">
+                  Each payment is kept with its own date, so the P&L only charges interest on what was still unpaid.
+                </p>
+              </>
+            ) : (
+            <>
+            {correcting && (
+              <p className="text-[11.5px] text-amber-700 bg-amber-50 rounded-lg px-3 py-2 mb-3">
+                Use this only to fix a mistake. Changing the total is logged as a correction, and changing only the date moves the latest payment to that date.
+              </p>
+            )}
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="label">Amount Received (₹)</label>
@@ -321,6 +396,8 @@ export default function InvoiceModal({ invoice, onSave, onClose }) {
                   value={fmtCurrency(balance)} />
               </div>
             </div>
+            </>
+            )}
           </section>
 
           {/* ── Remarks ── */}
