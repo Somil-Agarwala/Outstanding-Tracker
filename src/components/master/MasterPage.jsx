@@ -5,9 +5,10 @@ import { Plus, X, Loader2, Pencil } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { invalidate } from '../../lib/cache'
 import FinanceSection from './FinanceSection'
+import { useAppSettings } from '../../hooks/useAppSettings'
 
 /* ── Stockist Modal (Add & Edit) ── */
-function StockistModal({ stockist, companies, allPsrs, locations, onSave, onClose }) {
+function StockistModal({ stockist, companies, allPsrs, locations, lockLocation = null, onSave, onClose }) {
   const editing = !!stockist
   const [f, setF] = useState({
     name:        stockist?.name              ?? '',
@@ -15,7 +16,7 @@ function StockistModal({ stockist, companies, allPsrs, locations, onSave, onClos
     mobile:      stockist?.mobile            ?? '',
     company_id:  stockist?.company_id        ?? '',
     psr_id:      stockist?.psr_id            ?? '',
-    location_id: stockist?.location_id       ?? '',
+    location_id: stockist?.location_id       ?? lockLocation ?? '',
     credit_days: String(stockist?.credit_days ?? 30),
   })
   const [busy, setBusy] = useState(false)
@@ -62,12 +63,15 @@ function StockistModal({ stockist, companies, allPsrs, locations, onSave, onClos
           <div><label className="label">PSR *</label>
             <select className="input" value={f.psr_id} onChange={e => s('psr_id')(e.target.value)}>
               <option value="">Select PSR…</option>
-              {allPsrs.map(p => <option key={p.id} value={p.id}>{p.name} ({p.locations?.name})</option>)}
+              {allPsrs.filter(p => !lockLocation || p.location_id === lockLocation)
+                .map(p => <option key={p.id} value={p.id}>{p.name} ({p.locations?.name})</option>)}
             </select></div>
           <div><label className="label">Location *</label>
-            <select className="input" value={f.location_id} onChange={e => s('location_id')(e.target.value)}>
+            <select className="input" value={f.location_id} disabled={!!lockLocation}
+              onChange={e => s('location_id')(e.target.value)}>
               <option value="">Select location…</option>
-              {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              {locations.filter(l => !lockLocation || l.id === lockLocation)
+                .map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select></div>
           <div><label className="label">Credit Days *</label>
             <input type="number" min="1" className="input" value={f.credit_days}
@@ -86,13 +90,13 @@ function StockistModal({ stockist, companies, allPsrs, locations, onSave, onClos
 }
 
 /* ── PSR Modal (Add & Edit) ── */
-function PsrModal({ psr, companies, locations, onSave, onClose }) {
+function PsrModal({ psr, companies, locations, lockLocation = null, onSave, onClose }) {
   const editing = !!psr
   const [f, setF] = useState({
     name:        psr?.name        ?? '',
     mobile:      psr?.mobile      ?? '',
     company_id:  psr?.company_id  ?? '',
-    location_id: psr?.location_id ?? '',
+    location_id: psr?.location_id ?? lockLocation ?? '',
   })
   const [busy, setBusy] = useState(false)
   const [err,  setErr]  = useState('')
@@ -131,9 +135,11 @@ function PsrModal({ psr, companies, locations, onSave, onClose }) {
               {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select></div>
           <div><label className="label">Location *</label>
-            <select className="input" value={f.location_id} onChange={e => s('location_id')(e.target.value)}>
+            <select className="input" value={f.location_id} disabled={!!lockLocation}
+              onChange={e => s('location_id')(e.target.value)}>
               <option value="">Select location…</option>
-              {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              {locations.filter(l => !lockLocation || l.id === lockLocation)
+                .map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select></div>
           {err && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{err}</p>}
           <div className="flex gap-2 pt-1">
@@ -148,10 +154,57 @@ function PsrModal({ psr, companies, locations, onSave, onClose }) {
   )
 }
 
+/* ── Admin switch: let location managers edit ── */
+function ManagerEditSwitch({ on, missing, onChange }) {
+  const [busy, setBusy] = useState(false)
+  const [err,  setErr]  = useState('')
+
+  async function toggle() {
+    setBusy(true); setErr('')
+    try { await onChange(!on) } catch (e) { setErr(e.message) } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-gray-700">Location managers can edit Master Data</div>
+        <div className="text-xs text-faint mt-0.5">
+          {missing
+            ? 'Not set up yet: run supabase/2026-10-16_manager_master_edit.sql in Supabase.'
+            : on
+              ? 'On. Ashwani and Nitesh can add and edit stockists and PSRs in their own location. They cannot delete, or touch margins and loans.'
+              : 'Off. Location managers can only view Master Data.'}
+        </div>
+        {err && <p className="mt-2 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{err}</p>}
+      </div>
+      <button type="button" role="switch" aria-checked={on} aria-label="Let location managers edit Master Data"
+        disabled={busy || missing} onClick={toggle}
+        className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${on ? 'bg-brand' : 'bg-gray-300'}`}>
+        <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-6' : 'translate-x-1'}`} />
+      </button>
+    </div>
+  )
+}
+
+/* RLS refusals come back as an error on insert, but as zero rows on update. */
+function friendly(e) {
+  const msg = e?.message ?? String(e)
+  return /row-level security|permission denied/i.test(msg)
+    ? 'Not saved. Editing may have been turned off by an admin, or this is outside your location.'
+    : msg
+}
+
 /* ── Main Page ── */
 export default function MasterPage() {
-  const { isAdmin } = useAuth()
+  const { isAdmin, profile } = useAuth()
   const { companies, locations, allPsrs, allStockists, loading, addStockist, addPsr, refetch } = useMasterData()
+  const { managerEdit, setManagerEdit, missing, refetch: refetchSettings } = useAppSettings()
+
+  /* Admins always edit. Location managers edit their own location only
+     while an admin has the switch on; the database enforces the same rule. */
+  const isManager = profile?.role === 'location_manager' && !!profile?.location_id
+  const canEdit = isAdmin || (isManager && managerEdit)
+  const lockLocation = isAdmin ? null : profile?.location_id ?? null
   const [stockistModal, setStockistModal] = useState(null)
   const [psrModal,      setPsrModal]      = useState(null)
   const [stockistSearch, setStockistSearch] = useState('')
@@ -160,9 +213,8 @@ export default function MasterPage() {
     s.name.toLowerCase().includes(stockistSearch.toLowerCase())
   )
 
-  /* Everyone sees Master Data. Location managers get a read-only view of
-     their own location (RLS already limits stockists and PSRs to it, and
-     blocks their writes). Editing, and Margins & Loans, stay admin-only. */
+  /* Everyone sees Master Data. Location managers see their own location
+     (RLS limits stockists and PSRs to it). Margins & Loans stay admin-only. */
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
@@ -174,27 +226,25 @@ export default function MasterPage() {
      the change shows straight away. A change in credit days is carried onto the
      dealer's unpaid invoices by the trg_stockist_credit_days_sync database
      trigger, which recalculates their due dates. */
-  async function saveStockist(payload, id) {
-    if (id) {
-      const { error } = await supabase.from('stockists').update(payload).eq('id', id)
-      if (error) throw error
-      await refetch()
-    } else {
-      await addStockist(payload)
+  async function saveRow(table, payload, id, add) {
+    try {
+      if (id) {
+        const { data, error } = await supabase.from(table).update(payload).eq('id', id).select('id')
+        if (error) throw error
+        if (!data?.length) throw new Error('row-level security')
+        await refetch()
+      } else {
+        await add(payload)
+      }
+    } catch (e) {
+      refetchSettings()
+      throw new Error(friendly(e))
     }
     invalidate('ledger')
   }
 
-  async function savePsr(payload, id) {
-    if (id) {
-      const { error } = await supabase.from('psrs').update(payload).eq('id', id)
-      if (error) throw error
-      await refetch()
-    } else {
-      await addPsr(payload)
-    }
-    invalidate('ledger')
-  }
+  const saveStockist = (payload, id) => saveRow('stockists', payload, id, addStockist)
+  const savePsr      = (payload, id) => saveRow('psrs', payload, id, addPsr)
 
   return (
     <div className="p-6 space-y-6">
@@ -203,9 +253,13 @@ export default function MasterPage() {
         <p className="text-sm text-gray-400 mt-0.5">
           {isAdmin
             ? 'Manage stockists, PSRs, companies, locations, margins and loans'
-            : 'Stockists and PSRs for your location. Ask an admin to add or change one.'}
+            : canEdit
+              ? 'Add and edit stockists and PSRs for your location.'
+              : 'Stockists and PSRs for your location. Editing is turned off by the admin.'}
         </p>
       </div>
+
+      {isAdmin && <ManagerEditSwitch on={managerEdit} missing={missing} onChange={setManagerEdit} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
@@ -223,7 +277,7 @@ export default function MasterPage() {
                 onChange={e => setStockistSearch(e.target.value)}
                 className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs w-44 focus:outline-none focus:ring-2 focus:ring-indigo-300"
               />
-              {isAdmin && (
+              {canEdit && (
                 <button onClick={() => setStockistModal({})} className="btn-primary text-xs">
                   <Plus size={12} /> Add
                 </button>
@@ -233,7 +287,7 @@ export default function MasterPage() {
           <div className="overflow-auto max-h-80">
             <table className="w-full">
               <thead>
-                <tr>{['Name','Town','Company','PSR','Mobile','Credit', ...(isAdmin ? [''] : [])].map(h =>
+                <tr>{['Name','Town','Company','PSR','Mobile','Credit', ...(canEdit ? [''] : [])].map(h =>
                   <th key={h} className="th">{h}</th>)}
                 </tr>
               </thead>
@@ -246,7 +300,7 @@ export default function MasterPage() {
                     <td className="td text-gray-500 text-xs">{s.psrs?.name}</td>
                     <td className="td font-mono text-xs text-gray-400">{s.mobile ?? '—'}</td>
                     <td className="td text-gray-500 text-xs">{s.credit_days}d</td>
-                    {isAdmin && (
+                    {canEdit && (
                       <td className="td">
                         <button onClick={() => setStockistModal(s)} aria-label={`Edit ${s.name}`}
                           className="text-indigo-600 hover:text-indigo-800 transition-colors">
@@ -257,7 +311,7 @@ export default function MasterPage() {
                   </tr>
                 ))}
                 {filteredStockists.length === 0 && (
-                  <tr><td colSpan={isAdmin ? 7 : 6} className="td text-center text-gray-400 py-8">
+                  <tr><td colSpan={canEdit ? 7 : 6} className="td text-center text-gray-400 py-8">
                     {stockistSearch ? 'No stockists match your search' : 'No stockists yet'}
                   </td></tr>
                 )}
@@ -272,7 +326,7 @@ export default function MasterPage() {
             <h2 className="text-sm font-semibold text-gray-700">
               PSRs / Agents <span className="text-gray-400 font-normal ml-1">({allPsrs.length})</span>
             </h2>
-            {isAdmin && (
+            {canEdit && (
               <button onClick={() => setPsrModal({})} className="btn-primary text-xs">
                 <Plus size={12} /> Add
               </button>
@@ -281,7 +335,7 @@ export default function MasterPage() {
           <div className="overflow-auto max-h-80">
             <table className="w-full">
               <thead>
-                <tr>{['Name','Location','Company','Mobile', ...(isAdmin ? [''] : [])].map(h =>
+                <tr>{['Name','Location','Company','Mobile', ...(canEdit ? [''] : [])].map(h =>
                   <th key={h} className="th">{h}</th>)}
                 </tr>
               </thead>
@@ -292,7 +346,7 @@ export default function MasterPage() {
                     <td className="td text-gray-500 text-xs">{p.locations?.name}</td>
                     <td className="td text-gray-500 text-xs">{p.companies?.name}</td>
                     <td className="td font-mono text-xs text-gray-400">{p.mobile ?? '—'}</td>
-                    {isAdmin && (
+                    {canEdit && (
                       <td className="td">
                         <button onClick={() => setPsrModal(p)} aria-label={`Edit ${p.name}`}
                           className="text-indigo-600 hover:text-indigo-800 transition-colors">
@@ -303,7 +357,7 @@ export default function MasterPage() {
                   </tr>
                 ))}
                 {allPsrs.length === 0 && (
-                  <tr><td colSpan={isAdmin ? 5 : 4} className="td text-center text-gray-400 py-8">No PSRs yet</td></tr>
+                  <tr><td colSpan={canEdit ? 5 : 4} className="td text-center text-gray-400 py-8">No PSRs yet</td></tr>
                 )}
               </tbody>
             </table>
@@ -334,17 +388,17 @@ export default function MasterPage() {
         {isAdmin && <FinanceSection companies={companies} />}
       </div>
 
-      {isAdmin && stockistModal !== null && (
+      {canEdit && stockistModal !== null && (
         <StockistModal
           stockist={stockistModal?.id ? stockistModal : null}
-          companies={companies} allPsrs={allPsrs} locations={locations}
+          companies={companies} allPsrs={allPsrs} locations={locations} lockLocation={lockLocation}
           onSave={saveStockist} onClose={() => setStockistModal(null)}
         />
       )}
-      {isAdmin && psrModal !== null && (
+      {canEdit && psrModal !== null && (
         <PsrModal
           psr={psrModal?.id ? psrModal : null}
-          companies={companies} locations={locations}
+          companies={companies} locations={locations} lockLocation={lockLocation}
           onSave={savePsr} onClose={() => setPsrModal(null)}
         />
       )}
