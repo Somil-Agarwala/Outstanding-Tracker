@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useMasterData } from '../../hooks/useMasterData'
 import { useAuth } from '../../hooks/useAuth'
 import { Plus, X, Loader2, Pencil } from 'lucide-react'
-import { Navigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { invalidate } from '../../lib/cache'
 import FinanceSection from './FinanceSection'
@@ -161,8 +160,9 @@ export default function MasterPage() {
     s.name.toLowerCase().includes(stockistSearch.toLowerCase())
   )
 
-  if (!isAdmin) return <Navigate to="/" replace />
-
+  /* Everyone sees Master Data. Location managers get a read-only view of
+     their own location (RLS already limits stockists and PSRs to it, and
+     blocks their writes). Editing, and Margins & Loans, stay admin-only. */
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
@@ -200,7 +200,11 @@ export default function MasterPage() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Master Data</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Manage stockists, PSRs, companies, locations, margins and loans</p>
+        <p className="text-sm text-gray-400 mt-0.5">
+          {isAdmin
+            ? 'Manage stockists, PSRs, companies, locations, margins and loans'
+            : 'Stockists and PSRs for your location. Ask an admin to add or change one.'}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -219,15 +223,17 @@ export default function MasterPage() {
                 onChange={e => setStockistSearch(e.target.value)}
                 className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs w-44 focus:outline-none focus:ring-2 focus:ring-indigo-300"
               />
-              <button onClick={() => setStockistModal({})} className="btn-primary text-xs">
-                <Plus size={12} /> Add
-              </button>
+              {isAdmin && (
+                <button onClick={() => setStockistModal({})} className="btn-primary text-xs">
+                  <Plus size={12} /> Add
+                </button>
+              )}
             </div>
           </div>
           <div className="overflow-auto max-h-80">
             <table className="w-full">
               <thead>
-                <tr>{['Name','Town','Company','PSR','Mobile','Credit',''].map(h =>
+                <tr>{['Name','Town','Company','PSR','Mobile','Credit', ...(isAdmin ? [''] : [])].map(h =>
                   <th key={h} className="th">{h}</th>)}
                 </tr>
               </thead>
@@ -240,16 +246,18 @@ export default function MasterPage() {
                     <td className="td text-gray-500 text-xs">{s.psrs?.name}</td>
                     <td className="td font-mono text-xs text-gray-400">{s.mobile ?? '—'}</td>
                     <td className="td text-gray-500 text-xs">{s.credit_days}d</td>
-                    <td className="td">
-                      <button onClick={() => setStockistModal(s)}
-                        className="text-indigo-600 hover:text-indigo-800 transition-colors">
-                        <Pencil size={13} />
-                      </button>
-                    </td>
+                    {isAdmin && (
+                      <td className="td">
+                        <button onClick={() => setStockistModal(s)} aria-label={`Edit ${s.name}`}
+                          className="text-indigo-600 hover:text-indigo-800 transition-colors">
+                          <Pencil size={13} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {filteredStockists.length === 0 && (
-                  <tr><td colSpan={7} className="td text-center text-gray-400 py-8">
+                  <tr><td colSpan={isAdmin ? 7 : 6} className="td text-center text-gray-400 py-8">
                     {stockistSearch ? 'No stockists match your search' : 'No stockists yet'}
                   </td></tr>
                 )}
@@ -264,14 +272,16 @@ export default function MasterPage() {
             <h2 className="text-sm font-semibold text-gray-700">
               PSRs / Agents <span className="text-gray-400 font-normal ml-1">({allPsrs.length})</span>
             </h2>
-            <button onClick={() => setPsrModal({})} className="btn-primary text-xs">
-              <Plus size={12} /> Add
-            </button>
+            {isAdmin && (
+              <button onClick={() => setPsrModal({})} className="btn-primary text-xs">
+                <Plus size={12} /> Add
+              </button>
+            )}
           </div>
           <div className="overflow-auto max-h-80">
             <table className="w-full">
               <thead>
-                <tr>{['Name','Location','Company','Mobile',''].map(h =>
+                <tr>{['Name','Location','Company','Mobile', ...(isAdmin ? [''] : [])].map(h =>
                   <th key={h} className="th">{h}</th>)}
                 </tr>
               </thead>
@@ -282,16 +292,18 @@ export default function MasterPage() {
                     <td className="td text-gray-500 text-xs">{p.locations?.name}</td>
                     <td className="td text-gray-500 text-xs">{p.companies?.name}</td>
                     <td className="td font-mono text-xs text-gray-400">{p.mobile ?? '—'}</td>
-                    <td className="td">
-                      <button onClick={() => setPsrModal(p)}
-                        className="text-indigo-600 hover:text-indigo-800 transition-colors">
-                        <Pencil size={13} />
-                      </button>
-                    </td>
+                    {isAdmin && (
+                      <td className="td">
+                        <button onClick={() => setPsrModal(p)} aria-label={`Edit ${p.name}`}
+                          className="text-indigo-600 hover:text-indigo-800 transition-colors">
+                          <Pencil size={13} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {allPsrs.length === 0 && (
-                  <tr><td colSpan={5} className="td text-center text-gray-400 py-8">No PSRs yet</td></tr>
+                  <tr><td colSpan={isAdmin ? 5 : 4} className="td text-center text-gray-400 py-8">No PSRs yet</td></tr>
                 )}
               </tbody>
             </table>
@@ -318,18 +330,18 @@ export default function MasterPage() {
           </div>
         </div>
 
-        {/* ── Margins & Loans (Party P&L) ── */}
-        <FinanceSection companies={companies} />
+        {/* ── Margins & Loans (Party P&L) — admins only ── */}
+        {isAdmin && <FinanceSection companies={companies} />}
       </div>
 
-      {stockistModal !== null && (
+      {isAdmin && stockistModal !== null && (
         <StockistModal
           stockist={stockistModal?.id ? stockistModal : null}
           companies={companies} allPsrs={allPsrs} locations={locations}
           onSave={saveStockist} onClose={() => setStockistModal(null)}
         />
       )}
-      {psrModal !== null && (
+      {isAdmin && psrModal !== null && (
         <PsrModal
           psr={psrModal?.id ? psrModal : null}
           companies={companies} locations={locations}
