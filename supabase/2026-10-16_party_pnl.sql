@@ -118,6 +118,9 @@ begin
 end;
 $$;
 
+-- Trigger-only function: nobody should call it over the API.
+revoke execute on function public.fn_log_invoice_payment() from public, anon, authenticated;
+
 drop trigger if exists trg_log_invoice_payment on public.invoices;
 create trigger trg_log_invoice_payment
 after insert or update of payment_received, payment_date, stockist_id, invoice_date, credit_days
